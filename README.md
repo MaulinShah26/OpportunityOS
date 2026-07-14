@@ -104,7 +104,7 @@ Stored v0.2 analyses remain readable and receive a `legacy_unreviewed` critic ma
 
 ## Web workspace
 
-OpportunityOS v0.4 serves a lightweight interface directly from FastAPI:
+OpportunityOS serves a lightweight interface directly from FastAPI:
 
 ```text
 /app                 onboarding, analysis, decisions, memory, and audit history
@@ -116,6 +116,20 @@ OpportunityOS v0.4 serves a lightweight interface directly from FastAPI:
 The workspace supports résumé upload, explicit initial preferences and exclusions, loading an existing profile by ID, one-opportunity analysis, evidence and critic review, feedback capture, memory correction, and audit-history inspection. It stores the active profile ID in browser local storage for convenience. This is not an authentication mechanism.
 
 No external frontend packages, CDNs, fonts, analytics, or third-party browser scripts are used.
+
+## Private staging
+
+A private Docker Compose staging stack is available for a single Linux VM:
+
+```bash
+cp .env.staging.example .env.staging
+# Replace POSTGRES_PASSWORD with: openssl rand -hex 32
+bash scripts/deploy_staging.sh
+```
+
+The app binds only to `127.0.0.1`, PostgreSQL is not exposed on the host, and Alembic migrations run before Uvicorn starts. Access the workspace through an SSH or Google Cloud IAP tunnel rather than opening port 8000 publicly.
+
+See [docs/STAGING_DEPLOYMENT.md](docs/STAGING_DEPLOYMENT.md) for deployment, tunnelling, backup, restore, update, and rollback procedures.
 
 ## Runtime modes
 
@@ -151,4 +165,4 @@ examples/                sample payloads
 - OCR for scanned resumes;
 - a production web interface.
 
-Those are later stages after the relevance, memory-control, and evidence-safety foundations are validated.
+Those are later stages after the relevance, memory-control, evidence-safety, and staging-operability foundations are validated.

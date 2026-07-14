@@ -29,3 +29,50 @@ jobs:
       - name: Enforce Ruff
         if: steps.ruff.outcome == 'failure'
         run: exit 1
+
+  staging-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create CI staging environment
+        run: |
+          cat > .env.staging <<'EOF'
+          COMPOSE_PROJECT_NAME=opportunityos_ci
+          APP_NAME=OpportunityOS-CI
+          STAGING_PORT=8000
+          POSTGRES_DB=opportunityos
+          POSTGRES_USER=opportunityos
+          POSTGRES_PASSWORD=ci_only_long_hex_password_0123456789abcdef
+          LLM_MODE=mock
+          ORCHESTRATOR=local
+          RUN_MIGRATIONS=true
+          WEB_CONCURRENCY=1
+          FORWARDED_ALLOW_IPS=127.0.0.1
+          EOF
+      - name: Validate staging configuration
+        run: docker compose --env-file .env.staging -f docker-compose.staging.yml config
+      - name: Build staging image
+        id: staging_build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          docker compose --env-file .env.staging -f docker-compose.staging.yml build --progress=plain 2>&1 | tee staging-build.log
+      - name: Upload staging build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-build-log
+          path: staging-build.log
+      - name: Enforce staging build
+        if: steps.staging_build.outcome == 'failure'
+        run: exit 1
+      - name: Start staging stack
+        run: docker compose --env-file .env.staging -f docker-compose.staging.yml up -d
+      - name: Verify health and web workspace
+        run: ENV_FILE="$PWD/.env.staging" bash scripts/verify_staging.sh
+      - name: Show container logs
+        if: always()
+        run: docker compose --env-file .env.staging -f docker-compose.staging.yml logs --no-color --tail=200
+      - name: Stop staging stack
+        if: always()
+        run: docker compose --env-file .env.staging -f docker-compose.staging.yml down -v

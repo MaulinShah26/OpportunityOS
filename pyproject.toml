@@ -57,6 +57,3 @@ plugins = ["pydantic.mypy"]
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Form"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/opportunityos/web/static" = "opportunityos/web/static"
