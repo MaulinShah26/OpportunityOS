@@ -1,13 +1,27 @@
 from __future__ import annotations
 
-from opportunityos.application.ports import BusinessAnalyst, OpportunityExtractor, OutreachWriter, ResearchProvider
+from opportunityos.application.ports import (
+    BusinessAnalyst,
+    OpportunityExtractor,
+    OutreachWriter,
+    ResearchProvider,
+)
 from opportunityos.application.scoring import calculate_fit, recommend
 from opportunityos.domain.enums import Decision
 from opportunityos.domain.models import AnalysisRequest, AnalysisResult
 
 
 class AnalyseOpportunityService:
-    def __init__(self, research: ResearchProvider, extractor: OpportunityExtractor, analyst: BusinessAnalyst, outreach_writer: OutreachWriter, *, orchestrator_name: str = "local", model_metadata: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        research: ResearchProvider,
+        extractor: OpportunityExtractor,
+        analyst: BusinessAnalyst,
+        outreach_writer: OutreachWriter,
+        *,
+        orchestrator_name: str = "local",
+        model_metadata: dict[str, str] | None = None,
+    ) -> None:
         self._research = research
         self._extractor = extractor
         self._analyst = analyst
@@ -24,4 +38,12 @@ class AnalyseOpportunityService:
         outreach = None
         if recommendation.decision == Decision.PURSUE:
             outreach = self._outreach_writer.draft(request.profile, opportunity, hypotheses)
-        return AnalysisResult(opportunity=opportunity, hypotheses=hypotheses, fit_score=fit_score, recommendation=recommendation, outreach=outreach, orchestrator=self._orchestrator_name, model_metadata=self._model_metadata)
+        return AnalysisResult(
+            opportunity=opportunity,
+            hypotheses=hypotheses,
+            fit_score=fit_score,
+            recommendation=recommendation,
+            outreach=outreach,
+            orchestrator=self._orchestrator_name,
+            model_metadata=self._model_metadata,
+        )

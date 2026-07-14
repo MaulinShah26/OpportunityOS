@@ -2,14 +2,14 @@
 
 OpportunityOS is a personal opportunity-intelligence system. It is designed to surface a small number of highly relevant opportunities—not to become another job board.
 
-The first vertical slice accepts a structured personal profile plus one pasted opportunity or public URL, then returns:
+The current vertical slice onboards and persists a personal profile, then analyses and stores one pasted opportunity or public URL. It returns:
 
 - a typed opportunity profile;
 - evidence and business hypotheses;
 - a transparent fit-score breakdown;
 - a `PURSUE`, `HOLD`, or `REJECT` decision;
 - an outreach draft;
-- a feedback event that can update the personal preference model.
+- a feedback event that updates and persists the personal preference model.
 
 ## Architecture principles
 
@@ -54,6 +54,26 @@ curl -X POST http://127.0.0.1:8000/v1/analyses \
   -d @examples/analyse_request.json
 ```
 
+## Persistent onboarding and analysis
+
+Create a structured profile from resume text:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/profiles/onboard \
+  -H 'Content-Type: application/json' \
+  -d @examples/onboard_request.json
+```
+
+The response contains a `user_id`. Use it to run and persist an analysis:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/users/<user_id>/analyses \
+  -H 'Content-Type: application/json' \
+  -d '{"opportunity":{"raw_text":"Company: Acme\nRole: Fractional Data Lead\nLocation: Remote\nNeed product analytics and retention support."}}'
+```
+
+Resume files can also be submitted to `POST /v1/profiles/onboard-file` as multipart form data. Supported formats are `.txt`, `.pdf`, and `.docx`. OpportunityOS stores the resulting structured profile, not the uploaded file or raw resume text.
+
 ## Runtime modes
 
 | Setting | Value | Behaviour |
@@ -79,7 +99,7 @@ tests/                   unit and API tests
 examples/                sample payloads
 ```
 
-## What is intentionally not in this first slice
+## What is intentionally not in this version
 
 - internet-wide opportunity discovery;
 - LinkedIn scraping;

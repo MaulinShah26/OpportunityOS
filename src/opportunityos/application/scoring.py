@@ -88,11 +88,36 @@ def calculate_fit(profile: PersonalProfile, opportunity: OpportunityProfile) -> 
     )
 
     dimensions = [
-        ScoreDimension(name="capability_fit", score=capability_score, weight=0.30, explanation="Overlap between evidenced capabilities and opportunity requirements."),
-        ScoreDimension(name="preference_fit", score=preference_score, weight=0.20, explanation=preference_explanation),
-        ScoreDimension(name="constraint_compatibility", score=constraint_score, weight=0.25, explanation=constraint_explanation),
-        ScoreDimension(name="future_direction_fit", score=aspiration_score, weight=0.15, explanation="Overlap with the user's stated future direction."),
-        ScoreDimension(name="evidence_quality", score=evidence_score, weight=0.10, explanation="Coverage and confidence of source-backed evidence."),
+        ScoreDimension(
+            name="capability_fit",
+            score=capability_score,
+            weight=0.30,
+            explanation="Overlap between evidenced capabilities and opportunity requirements.",
+        ),
+        ScoreDimension(
+            name="preference_fit",
+            score=preference_score,
+            weight=0.20,
+            explanation=preference_explanation,
+        ),
+        ScoreDimension(
+            name="constraint_compatibility",
+            score=constraint_score,
+            weight=0.25,
+            explanation=constraint_explanation,
+        ),
+        ScoreDimension(
+            name="future_direction_fit",
+            score=aspiration_score,
+            weight=0.15,
+            explanation="Overlap with the user's stated future direction.",
+        ),
+        ScoreDimension(
+            name="evidence_quality",
+            score=evidence_score,
+            weight=0.10,
+            explanation="Coverage and confidence of source-backed evidence.",
+        ),
     ]
     weighted = sum(d.score * d.weight for d in dimensions)
     total = 0 if hard_breaches else round(weighted * 100)
@@ -101,9 +126,29 @@ def calculate_fit(profile: PersonalProfile, opportunity: OpportunityProfile) -> 
 
 def recommend(fit: FitScore, opportunity: OpportunityProfile) -> Recommendation:
     if fit.hard_constraint_breaches:
-        return Recommendation(decision=Decision.REJECT, rationale="The opportunity violates a user-defined hard constraint.", risks=fit.hard_constraint_breaches, next_action="Do not pursue unless the user explicitly changes the relevant constraint.")
+        return Recommendation(
+            decision=Decision.REJECT,
+            rationale="The opportunity violates a user-defined hard constraint.",
+            risks=fit.hard_constraint_breaches,
+            next_action="Do not pursue unless the user explicitly changes the relevant constraint.",
+        )
     if fit.total >= 72 and opportunity.extraction_confidence >= 0.6:
-        return Recommendation(decision=Decision.PURSUE, rationale="The opportunity has strong personal relevance and sufficient evidence.", risks=[], next_action="Review the evidence and personalise the draft before contacting anyone.")
+        return Recommendation(
+            decision=Decision.PURSUE,
+            rationale="The opportunity has strong personal relevance and sufficient evidence.",
+            risks=[],
+            next_action="Review the evidence and personalise the draft before contacting anyone.",
+        )
     if fit.total >= 45:
-        return Recommendation(decision=Decision.HOLD, rationale="The opportunity is plausible, but the fit or evidence is not yet strong enough.", risks=["Additional evidence or clarification is required."], next_action="Collect missing role, engagement, location, or company information.")
-    return Recommendation(decision=Decision.REJECT, rationale="The opportunity is materially weaker than the user's current priorities.", risks=["Low relevance relative to alternative opportunities."], next_action="Archive it and preserve the rejection reason as a learning signal.")
+        return Recommendation(
+            decision=Decision.HOLD,
+            rationale="The opportunity is plausible, but the fit or evidence is not yet strong enough.",
+            risks=["Additional evidence or clarification is required."],
+            next_action="Collect missing role, engagement, location, or company information.",
+        )
+    return Recommendation(
+        decision=Decision.REJECT,
+        rationale="The opportunity is materially weaker than the user's current priorities.",
+        risks=["Low relevance relative to alternative opportunities."],
+        next_action="Archive it and preserve the rejection reason as a learning signal.",
+    )
