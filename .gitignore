@@ -7,7 +7,10 @@ __pycache__/
 htmlcov/
 .venv/
 .env
+.env.staging
+.env.*.local
 *.db
+backups/
 .DS_Store
 .idea/
 .vscode/
