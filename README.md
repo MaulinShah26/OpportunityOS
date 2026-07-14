@@ -2,22 +2,24 @@
 
 OpportunityOS is a personal opportunity-intelligence system. It is designed to surface a small number of highly relevant opportunities—not to become another job board.
 
-The current vertical slice onboards and persists a personal profile, then analyses and stores one pasted opportunity or public URL. It returns:
+The current vertical slice onboards and persists a personal profile, analyses and stores one pasted opportunity or public URL, and gives the user direct control over the memory used for personalisation. It returns:
 
 - a typed opportunity profile;
 - evidence and business hypotheses;
 - a transparent fit-score breakdown;
 - a `PURSUE`, `HOLD`, or `REJECT` decision;
-- an outreach draft;
-- a feedback event that updates and persists the personal preference model.
+- a critic result with claim-level guardrails;
+- an outreach draft only when its declared claims are supported;
+- feedback that updates and persists the personal preference model;
+- inspectable and editable user memory with audit history.
 
 ## Architecture principles
 
 - **CrewAI orchestrates** multi-step agent workflows.
 - **OpenAI performs** structured extraction and classification.
 - **Claude performs** nuanced business analysis and outreach reasoning.
-- **Python owns** constraints, scoring, validation, and learning updates.
-- **PostgreSQL stores** structured profile, memory, evidence, runs, feedback, and outcomes.
+- **Python owns** constraints, scoring, validation, guardrails, and learning updates.
+- **PostgreSQL stores** structured profile, memory, evidence, runs, feedback, audits, and outcomes.
 - **Human approval remains mandatory** before any consequential outbound action.
 
 The default development mode is fully deterministic and requires no API keys. Live provider integrations are lazy-loaded.
@@ -46,7 +48,7 @@ docker compose up -d postgres
 uv run alembic upgrade head
 ```
 
-### Test the first vertical slice
+### Test the stateless analysis slice
 
 ```bash
 curl -X POST http://127.0.0.1:8000/v1/analyses \
@@ -74,6 +76,32 @@ curl -X POST http://127.0.0.1:8000/v1/users/<user_id>/analyses \
 
 Resume files can also be submitted to `POST /v1/profiles/onboard-file` as multipart form data. Supported formats are `.txt`, `.pdf`, and `.docx`. OpportunityOS stores the resulting structured profile, not the uploaded file or raw resume text.
 
+## User-controlled memory
+
+List the active capabilities, preferences, constraints, aspirations, and problem areas that OpportunityOS uses:
+
+```bash
+curl http://127.0.0.1:8000/v1/users/<user_id>/memory
+```
+
+Confirm an inferred item:
+
+```bash
+curl -X PATCH http://127.0.0.1:8000/v1/users/<user_id>/memory/<memory_id> \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"confirm","reason":"Verified by the user"}'
+```
+
+The same endpoint supports `update` and `reject`. `DELETE` performs a soft deletion so the audit trail remains available. Audit history is exposed at `GET /v1/users/<user_id>/memory-audit`.
+
+Implicit behaviour cannot overwrite an explicit preference or reactivate a user-rejected memory item. Users can deliberately change those items through the memory API.
+
+## Recommendation guardrails
+
+Every analysis includes a `critic` object. It validates evidence references, flags overstated confidence, distinguishes speculation from supported claims, and blocks outreach when company-specific claims lack valid evidence lineage. A blocked draft is retained inside the critic result for review, but the top-level `outreach` field is removed.
+
+Stored v0.2 analyses remain readable and receive a `legacy_unreviewed` critic marker.
+
 ## Runtime modes
 
 | Setting | Value | Behaviour |
@@ -90,9 +118,9 @@ Live mode requires `OPENAI_API_KEY`, `OPENAI_MODEL`, `ANTHROPIC_API_KEY`, and `A
 ```text
 src/opportunityos/
 ├── api/                 FastAPI routes and dependency wiring
-├── application/         scoring, learning, and use-case service
+├── application/         scoring, learning, guardrails, and use-case service
 ├── domain/              typed business contracts
-├── infrastructure/      database, LLM, and research adapters
+├── infrastructure/      database, LLM, resume, and research adapters
 └── orchestration/       optional CrewAI Flow runtime
 migrations/              Alembic database migrations
 tests/                   unit and API tests
@@ -105,7 +133,7 @@ examples/                sample payloads
 - LinkedIn scraping;
 - autonomous outreach sending;
 - reinforcement learning;
-- opaque conversational memory;
-- automatic modification of hard constraints.
+- OCR for scanned resumes;
+- a production web interface.
 
-Those are later stages after the relevance and learning foundations are validated.
+Those are later stages after the relevance, memory-control, and evidence-safety foundations are validated.
