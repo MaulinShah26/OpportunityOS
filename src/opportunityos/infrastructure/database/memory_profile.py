@@ -42,7 +42,11 @@ class ProfileMemoryMixin:
         user_id = str(profile.user_id)
         user = self._session.get(User, user_id)
         if user is None:
-            self._session.add(User(id=user_id, email=email, display_name=profile.display_name))
+            user = User(id=user_id, email=email, display_name=profile.display_name)
+            self._session.add(user)
+            # Flush the root aggregate before adding rows that reference it.
+            # Raw foreign keys alone do not establish ORM unit-of-work order.
+            self._session.flush()
         else:
             user.display_name = profile.display_name
             if email is not None:
