@@ -70,6 +70,31 @@ jobs:
         run: docker compose --env-file .env.staging -f docker-compose.staging.yml up -d
       - name: Verify health and web workspace
         run: ENV_FILE="$PWD/.env.staging" bash scripts/verify_staging.sh
+      - name: Verify PostgreSQL profile onboarding
+        run: |
+          cat > ci-resume.txt <<'EOF'
+          Senior data scientist and product analytics leader with Python, SQL, retention,
+          growth experimentation, forecasting, stakeholder management, and AI innovation experience.
+          EOF
+          curl --fail --silent --show-error \
+            -X POST http://127.0.0.1:8000/v1/profiles/onboard-file \
+            -F 'display_name=CI PostgreSQL User' \
+            -F 'headline=Fractional Data and AI Lead' \
+            -F 'email=ci-postgres@example.com' \
+            -F 'file=@ci-resume.txt;type=text/plain' \
+            > onboarding-response.json
+          USER_ID="$(python3 -c 'import json; print(json.load(open("onboarding-response.json"))["profile"]["user_id"])')"
+          test -n "${USER_ID}"
+          curl --fail --silent --show-error \
+            "http://127.0.0.1:8000/v1/users/${USER_ID}/memory" \
+            > memory-response.json
+          python3 - <<'PY'
+          import json
+
+          payload = json.load(open("memory-response.json"))
+          assert payload["items"], "onboarding did not persist memory"
+          assert any(item["category"] == "capability" for item in payload["items"])
+          PY
       - name: Show container logs
         if: always()
         run: docker compose --env-file .env.staging -f docker-compose.staging.yml logs --no-color --tail=200
