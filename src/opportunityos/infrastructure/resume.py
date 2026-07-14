@@ -36,5 +36,7 @@ def extract_resume_text(filename: str, content: bytes) -> str:
 
     cleaned = text.strip()
     if len(cleaned) < 40:
-        raise UnsupportedResumeError("The resume did not contain enough extractable text; scanned PDFs need OCR before upload")
+        raise UnsupportedResumeError(
+            "The resume did not contain enough extractable text; scanned PDFs need OCR before upload"
+        )
     return cleaned
