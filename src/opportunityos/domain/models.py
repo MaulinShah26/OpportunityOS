@@ -8,10 +8,15 @@ from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 from opportunityos.domain.enums import (
     ConstraintKind,
+    CriticSeverity,
     Decision,
     EvidenceType,
     FeedbackAction,
     FeedbackReason,
+    MemoryAction,
+    MemoryCategory,
+    MemorySource,
+    MemoryStatus,
     OpportunityType,
 )
 
@@ -133,6 +138,35 @@ class OutreachDraft(BaseModel):
     claims_to_avoid: list[str] = Field(default_factory=list)
 
 
+class GuardrailIssue(BaseModel):
+    code: str = Field(min_length=2, max_length=120)
+    message: str = Field(min_length=3, max_length=1000)
+    severity: CriticSeverity
+    claim: str | None = Field(default=None, max_length=2000)
+
+
+class CriticResult(BaseModel):
+    passed: bool
+    block_outreach: bool = False
+    issues: list[GuardrailIssue] = Field(default_factory=list)
+    unsupported_claims: list[str] = Field(default_factory=list)
+    blocked_draft: OutreachDraft | None = None
+    reviewed_at: datetime = Field(default_factory=utcnow)
+
+
+def legacy_unreviewed_critic() -> CriticResult:
+    return CriticResult(
+        passed=False,
+        issues=[
+            GuardrailIssue(
+                code="legacy_unreviewed",
+                message="This stored analysis predates recommendation guardrails.",
+                severity=CriticSeverity.WARNING,
+            )
+        ],
+    )
+
+
 class AnalysisResult(BaseModel):
     analysis_id: UUID = Field(default_factory=uuid4)
     opportunity: OpportunityProfile
@@ -140,6 +174,7 @@ class AnalysisResult(BaseModel):
     fit_score: FitScore
     recommendation: Recommendation
     outreach: OutreachDraft | None = None
+    critic: CriticResult = Field(default_factory=legacy_unreviewed_critic)
     generated_at: datetime = Field(default_factory=utcnow)
     orchestrator: str = "local"
     model_metadata: dict[str, str] = Field(default_factory=dict)
@@ -201,3 +236,53 @@ class PersistedFeedbackRequest(BaseModel):
 class UserActivitySummary(BaseModel):
     user_id: UUID
     analysis_count: int = Field(ge=0)
+
+
+class MemoryItem(BaseModel):
+    id: UUID
+    user_id: UUID
+    category: MemoryCategory
+    key: str
+    value: dict[str, object]
+    source: MemorySource
+    confidence: Score
+    status: MemoryStatus
+    active: bool
+    is_user_overridden: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class MemoryCollection(BaseModel):
+    user_id: UUID
+    items: list[MemoryItem]
+
+
+class MemoryMutationRequest(BaseModel):
+    action: MemoryAction
+    key: str | None = Field(default=None, min_length=2, max_length=180)
+    value: dict[str, object] | None = None
+    reason: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_update_payload(self) -> MemoryMutationRequest:
+        if self.action == MemoryAction.UPDATE and self.value is None:
+            raise ValueError("Update action requires value")
+        return self
+
+
+class MemoryAuditEvent(BaseModel):
+    id: UUID
+    user_id: UUID
+    memory_item_id: UUID | None = None
+    action: str
+    actor: str
+    before: dict[str, object] | None = None
+    after: dict[str, object] | None = None
+    reason: str | None = None
+    created_at: datetime
+
+
+class MemoryAuditCollection(BaseModel):
+    user_id: UUID
+    events: list[MemoryAuditEvent]

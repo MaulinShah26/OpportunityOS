@@ -20,7 +20,9 @@ def _find_or_create(profile: PersonalProfile, key: str) -> WeightedPreference:
     return preference
 
 
-def _bounded_update(preference: WeightedPreference, delta: float, explicit: bool) -> None:
+def _bounded_update(preference: WeightedPreference, delta: float, explicit: bool) -> bool:
+    if preference.explicit and not explicit:
+        return False
     multiplier = EXPLICIT_MULTIPLIER if explicit else IMPLICIT_MULTIPLIER
     applied = max(-MAX_SINGLE_UPDATE, min(MAX_SINGLE_UPDATE, delta * multiplier))
     preference.weight = max(0.0, min(1.0, preference.weight + applied))
@@ -30,6 +32,7 @@ def _bounded_update(preference: WeightedPreference, delta: float, explicit: bool
     )
     preference.explicit = preference.explicit or explicit
     preference.last_updated_at = datetime.now(timezone.utc)
+    return True
 
 
 def apply_feedback(
@@ -48,14 +51,18 @@ def apply_feedback(
     if opportunity_type and direction:
         key = f"engagement:{opportunity_type.value}"
         pref = _find_or_create(updated, key)
-        _bounded_update(pref, 0.05 * direction, feedback.explicit)
-        changes.append(f"Updated {key} to {pref.weight:.2f}")
+        if _bounded_update(pref, 0.05 * direction, feedback.explicit):
+            changes.append(f"Updated {key} to {pref.weight:.2f}")
+        else:
+            changes.append(f"Preserved explicit {key}")
 
     if company_industry and direction:
         key = f"industry:{company_industry.strip().lower()}"
         pref = _find_or_create(updated, key)
-        _bounded_update(pref, 0.03 * direction, feedback.explicit)
-        changes.append(f"Updated {key} to {pref.weight:.2f}")
+        if _bounded_update(pref, 0.03 * direction, feedback.explicit):
+            changes.append(f"Updated {key} to {pref.weight:.2f}")
+        else:
+            changes.append(f"Preserved explicit {key}")
 
     reason_updates = {
         FeedbackReason.LOCATION_MISMATCH: ("location:flexibility", -0.05),
@@ -69,7 +76,9 @@ def apply_feedback(
             continue
         key, delta = reason_updates[reason]
         pref = _find_or_create(updated, key)
-        _bounded_update(pref, delta, feedback.explicit)
-        changes.append(f"Updated {key} to {pref.weight:.2f}")
+        if _bounded_update(pref, delta, feedback.explicit):
+            changes.append(f"Updated {key} to {pref.weight:.2f}")
+        else:
+            changes.append(f"Preserved explicit {key}")
 
     return updated, changes

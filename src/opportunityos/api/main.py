@@ -16,6 +16,10 @@ from opportunityos.domain.models import (
     AnalysisResult,
     FeedbackRequest,
     FeedbackResponse,
+    MemoryAuditCollection,
+    MemoryCollection,
+    MemoryItem,
+    MemoryMutationRequest,
     PersistedAnalysisRequest,
     PersistedFeedbackRequest,
     PersonalProfile,
@@ -25,6 +29,8 @@ from opportunityos.domain.models import (
 )
 from opportunityos.infrastructure.database import (
     AnalysisNotFoundError,
+    MemoryConflictError,
+    MemoryNotFoundError,
     ProfileNotFoundError,
     SqlAlchemyStore,
 )
@@ -34,8 +40,8 @@ from opportunityos.orchestration.crewai_runtime import execute_with_crewai
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.2.0",
-    description="Personal opportunity intelligence with persistent profiles and feedback",
+    version="0.3.0",
+    description="Personal opportunity intelligence with user-controlled memory and guardrails",
 )
 
 
@@ -63,8 +69,8 @@ def save_profile(
     email: str | None = None,
     store: SqlAlchemyStore = Depends(get_store),
 ) -> ProfileResponse:
-    store.save_profile(profile, email=email)
-    return ProfileResponse(profile=profile, email=email)
+    saved = store.save_profile(profile, email=email, actor="profile_user", reason="profile update")
+    return ProfileResponse(profile=saved, email=email)
 
 
 @app.post(
@@ -128,6 +134,72 @@ def read_profile(
         return ProfileResponse(profile=store.get_profile(user_id))
     except ProfileNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
+
+
+@app.get("/v1/users/{user_id}/memory", response_model=MemoryCollection)
+def read_user_memory(
+    user_id: UUID,
+    include_inactive: bool = False,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> MemoryCollection:
+    try:
+        store.get_profile(user_id)
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
+    return MemoryCollection(
+        user_id=user_id,
+        items=store.list_memory(user_id, include_inactive=include_inactive),
+    )
+
+
+@app.patch("/v1/users/{user_id}/memory/{memory_id}", response_model=MemoryItem)
+def mutate_user_memory(
+    user_id: UUID,
+    memory_id: UUID,
+    request: MemoryMutationRequest,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> MemoryItem:
+    try:
+        return store.mutate_memory(user_id, memory_id, request)
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
+    except MemoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory item not found") from exc
+    except MemoryConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@app.delete(
+    "/v1/users/{user_id}/memory/{memory_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_user_memory(
+    user_id: UUID,
+    memory_id: UUID,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> None:
+    try:
+        store.delete_memory(user_id, memory_id)
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
+    except MemoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory item not found") from exc
+    except MemoryConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@app.get("/v1/users/{user_id}/memory-audit", response_model=MemoryAuditCollection)
+def read_memory_audit(
+    user_id: UUID,
+    limit: int = 100,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> MemoryAuditCollection:
+    try:
+        store.get_profile(user_id)
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
+    safe_limit = max(1, min(limit, 500))
+    return MemoryAuditCollection(user_id=user_id, events=store.list_memory_audit(user_id, limit=safe_limit))
 
 
 @app.post("/v1/analyses", response_model=AnalysisResult)
