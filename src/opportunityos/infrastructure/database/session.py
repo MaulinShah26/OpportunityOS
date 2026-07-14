@@ -12,14 +12,22 @@ from opportunityos.infrastructure.database.models import Base
 
 
 class Database:
+    """Owns the SQLAlchemy engine and short-lived unit-of-work sessions."""
+
     def __init__(self, database_url: str) -> None:
         engine_kwargs: dict[str, object] = {"pool_pre_ping": True}
         if database_url.startswith("sqlite"):
             engine_kwargs["connect_args"] = {"check_same_thread": False}
             if database_url.endswith(":memory:"):
                 engine_kwargs["poolclass"] = StaticPool
+
         self.engine: Engine = create_engine(database_url, **engine_kwargs)
-        self._session_factory = sessionmaker(bind=self.engine, autoflush=False, expire_on_commit=False, class_=Session)
+        self._session_factory = sessionmaker(
+            bind=self.engine,
+            autoflush=False,
+            expire_on_commit=False,
+            class_=Session,
+        )
         self._schema_lock = Lock()
         self._schema_ready = False
 
