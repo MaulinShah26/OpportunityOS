@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env.staging}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env.staging}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.staging}
+    volumes:
+      - opportunityos_staging_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - opportunityos_internal
+    security_opt:
+      - no-new-privileges:true
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: staging
+      APP_NAME: ${APP_NAME:-OpportunityOS-Staging}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      LLM_MODE: ${LLM_MODE:-mock}
+      ORCHESTRATOR: ${ORCHESTRATOR:-local}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      HTTP_TIMEOUT_SECONDS: ${HTTP_TIMEOUT_SECONDS:-15}
+      MAX_SOURCE_BYTES: ${MAX_SOURCE_BYTES:-1000000}
+      AUTO_CREATE_SCHEMA: "false"
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+      DATABASE_WAIT_ATTEMPTS: ${DATABASE_WAIT_ATTEMPTS:-30}
+      DATABASE_WAIT_SECONDS: ${DATABASE_WAIT_SECONDS:-2}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+    ports:
+      - 127.0.0.1:${STAGING_PORT:-8000}:8000
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 10
+    networks:
+      - opportunityos_internal
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  opportunityos_internal:
+    driver: bridge
+
+volumes:
+  opportunityos_staging_postgres:
