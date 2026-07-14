@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from opportunityos.application.guardrails import evaluate_guardrails
 from opportunityos.application.ports import (
     BusinessAnalyst,
     OpportunityExtractor,
@@ -38,12 +39,16 @@ class AnalyseOpportunityService:
         outreach = None
         if recommendation.decision == Decision.PURSUE:
             outreach = self._outreach_writer.draft(request.profile, opportunity, hypotheses)
+        critic = evaluate_guardrails(opportunity, hypotheses, recommendation, outreach)
+        if critic.block_outreach:
+            outreach = None
         return AnalysisResult(
             opportunity=opportunity,
             hypotheses=hypotheses,
             fit_score=fit_score,
             recommendation=recommendation,
             outreach=outreach,
+            critic=critic,
             orchestrator=self._orchestrator_name,
             model_metadata=self._model_metadata,
         )

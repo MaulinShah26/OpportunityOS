@@ -47,3 +47,35 @@ class FeedbackReason(str, Enum):
     TOO_JUNIOR = "too_junior"
     TOO_EXECUTION_HEAVY = "too_execution_heavy"
     INTERESTING_COMPANY_WRONG_OPPORTUNITY = "interesting_company_wrong_opportunity"
+
+
+class MemoryCategory(str, Enum):
+    CAPABILITY = "capability"
+    PREFERENCE = "preference"
+    CONSTRAINT = "constraint"
+    ASPIRATION = "aspiration"
+    PROBLEM_AREA = "problem_area"
+
+
+class MemorySource(str, Enum):
+    EXPLICIT = "explicit"
+    INFERRED = "inferred"
+
+
+class MemoryStatus(str, Enum):
+    ACTIVE = "active"
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+    DELETED = "deleted"
+
+
+class MemoryAction(str, Enum):
+    CONFIRM = "confirm"
+    UPDATE = "update"
+    REJECT = "reject"
+
+
+class CriticSeverity(str, Enum):
+    INFO = "info"
+    WARNING = "warning"
+    BLOCKING = "blocking"
