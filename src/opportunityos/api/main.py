@@ -135,6 +135,7 @@ def analyse_opportunity(
     request: AnalysisRequest,
     service: AnalyseOpportunityService = Depends(get_analysis_service),
 ) -> AnalysisResult:
+    """Backward-compatible stateless analysis endpoint."""
     return _execute_analysis(service, request)
 
 
@@ -172,6 +173,7 @@ def read_analysis(
 
 @app.post("/v1/feedback", response_model=FeedbackResponse)
 def record_feedback(request: FeedbackRequest) -> FeedbackResponse:
+    """Backward-compatible stateless feedback endpoint."""
     updated, changes = apply_feedback(
         request.profile,
         request.feedback,
