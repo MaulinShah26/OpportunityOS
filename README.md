@@ -39,7 +39,7 @@ uv run pytest
 uv run uvicorn opportunityos.api.main:app --reload
 ```
 
-Open `http://127.0.0.1:8000/docs`.
+Open `http://127.0.0.1:8000/app` for the web workspace or `http://127.0.0.1:8000/docs` for the API.
 
 ### Run with Docker PostgreSQL
 
@@ -101,6 +101,21 @@ Implicit behaviour cannot overwrite an explicit preference or reactivate a user-
 Every analysis includes a `critic` object. It validates evidence references, flags overstated confidence, distinguishes speculation from supported claims, and blocks outreach when company-specific claims lack valid evidence lineage. A blocked draft is retained inside the critic result for review, but the top-level `outreach` field is removed.
 
 Stored v0.2 analyses remain readable and receive a `legacy_unreviewed` critic marker.
+
+## Web workspace
+
+OpportunityOS v0.4 serves a lightweight interface directly from FastAPI:
+
+```text
+/app                 onboarding, analysis, decisions, memory, and audit history
+/static/base.css     layout and form styles
+/static/components.css result, memory, and audit styles
+/static/*.js         same-origin API client and interaction logic
+```
+
+The workspace supports résumé upload, explicit initial preferences and exclusions, loading an existing profile by ID, one-opportunity analysis, evidence and critic review, feedback capture, memory correction, and audit-history inspection. It stores the active profile ID in browser local storage for convenience. This is not an authentication mechanism.
+
+No external frontend packages, CDNs, fonts, analytics, or third-party browser scripts are used.
 
 ## Runtime modes
 
