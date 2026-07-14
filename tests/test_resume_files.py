@@ -16,7 +16,9 @@ def test_extracts_txt_resume() -> None:
 
 def test_extracts_docx_resume() -> None:
     document = Document()
-    document.add_paragraph("Senior data scientist with product analytics, retention and experimentation experience.")
+    document.add_paragraph(
+        "Senior data scientist with product analytics, retention and experimentation experience."
+    )
     buffer = BytesIO()
     document.save(buffer)
     text = extract_resume_text("resume.docx", buffer.getvalue())
