@@ -260,7 +260,7 @@ def record_persisted_feedback(
     user_id: UUID,
     request: PersistedFeedbackRequest,
     store: SqlAlchemyStore = Depends(get_store),
-) -> FedbackResponse:
+) -> FeedbackResponse:
     try:
         profile = store.get_profile(user_id)
     except ProfileNotFoundError as exc:
