@@ -25,6 +25,10 @@ class ProfileMemoryMixin:
     ) -> PersonalProfile:
         profile = self._respect_user_controls(profile, actor)
         self._persist_profile_payload(profile, email=email)
+        # User/profile and memory records do not have ORM relationships that
+        # communicate insert ordering to SQLAlchemy. Flush the parent rows
+        # before inserting memory so PostgreSQL foreign keys are satisfied.
+        self._session.flush()
         self._sync_memory(profile, actor=actor, reason=reason)
         self._session.flush()
         return profile
