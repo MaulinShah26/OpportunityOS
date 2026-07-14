@@ -1,0 +1,113 @@
+{
+  "analysis_id": "4ca66529-127d-42c9-89fb-188e7645cee5",
+  "opportunity": {
+    "id": "523eae61-fac9-4cbf-9e53-01dbd2a9383b",
+    "company_name": "Example Consumer Tech",
+    "title": "Fractional Data & AI Lead",
+    "opportunity_type": "fractional",
+    "location": "Remote",
+    "remote_allowed": true,
+    "seniority": null,
+    "required_skills": [
+      "analytics",
+      "product analytics",
+      "retention",
+      "growth",
+      "ai",
+      "experimentation"
+    ],
+    "responsibilities": [
+      "retention",
+      "growth",
+      "analytics",
+      "ai"
+    ],
+    "problem_areas": [
+      "retention",
+      "growth",
+      "analytics",
+      "ai"
+    ],
+    "compensation_text": null,
+    "evidence": [
+      {
+        "id": "93fc80fb-23b6-4ce3-8cd4-0bf735ca98ed",
+        "claim": "User-provided opportunity content",
+        "claim_type": "observed_fact",
+        "source_url": null,
+        "supporting_excerpt": "Company: Example Consumer Tech Role: Fractional Data & AI Lead Location: Remote We need help with product analytics, customer retention, growth experimentation and practical AI implementation.",
+        "confidence": 0.95,
+        "retrieved_at": "2026-07-14T10:04:22.065424Z"
+      }
+    ],
+    "extraction_confidence": 0.75
+  },
+  "hypotheses": [
+    {
+      "statement": "Example Consumer Tech may need stronger decision systems around retention, growth, analytics.",
+      "claim_type": "supported_inference",
+      "rationale": "The opportunity explicitly references these problem areas.",
+      "evidence_ids": [
+        "93fc80fb-23b6-4ce3-8cd4-0bf735ca98ed"
+      ],
+      "confidence": 0.65
+    }
+  ],
+  "fit_score": {
+    "total": 79,
+    "dimensions": [
+      {
+        "name": "capability_fit",
+        "score": 1.0,
+        "weight": 0.3,
+        "explanation": "Overlap between evidenced capabilities and opportunity requirements."
+      },
+      {
+        "name": "preference_fit",
+        "score": 0.925,
+        "weight": 0.2,
+        "explanation": "Matched weighted engagement, location, or work-style preferences."
+      },
+      {
+        "name": "constraint_compatibility",
+        "score": 1.0,
+        "weight": 0.25,
+        "explanation": "No hard constraint violations detected."
+      },
+      {
+        "name": "future_direction_fit",
+        "score": 0.2272727272727273,
+        "weight": 0.15,
+        "explanation": "Overlap with the user's stated future direction."
+      },
+      {
+        "name": "evidence_quality",
+        "score": 0.1875,
+        "weight": 0.1,
+        "explanation": "Coverage and confidence of source-backed evidence."
+      }
+    ],
+    "hard_constraint_breaches": []
+  },
+  "recommendation": {
+    "decision": "pursue",
+    "rationale": "The opportunity has strong personal relevance and sufficient evidence.",
+    "risks": [],
+    "next_action": "Review the evidence and personalise the draft before contacting anyone."
+  },
+  "outreach": {
+    "subject": "Regarding Fractional Data & AI Lead at Example Consumer Tech",
+    "body": "Hi, I reviewed the Fractional Data & AI Lead opportunity at Example Consumer Tech. My background in product analytics, retention, ai is directly relevant to retention. I would be interested in discussing the specific outcomes you need and whether a focused engagement is the right fit.",
+    "grounded_claims": [
+      "Example Consumer Tech may need stronger decision systems around retention, growth, analytics."
+    ],
+    "claims_to_avoid": [
+      "Claims about internal company problems not supported by public evidence."
+    ]
+  },
+  "generated_at": "2026-07-14T10:04:22.065840Z",
+  "orchestrator": "local",
+  "model_metadata": {
+    "mode": "mock"
+  }
+}

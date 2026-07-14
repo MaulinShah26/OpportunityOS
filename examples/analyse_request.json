@@ -1,0 +1,33 @@
+{
+  "profile": {
+    "display_name": "Maulin Shah",
+    "headline": "Fractional Data and AI operator",
+    "capabilities": [
+      {"name": "product analytics", "proficiency": 0.9, "evidence": ["Led product analytics"]},
+      {"name": "retention", "proficiency": 0.9, "evidence": ["Built retention systems"]},
+      {"name": "ai", "proficiency": 0.75, "evidence": ["Led AI innovation initiatives"]}
+    ],
+    "preferences": [
+      {"key": "engagement:fractional", "weight": 0.95},
+      {"key": "remote", "weight": 0.9}
+    ],
+    "constraints": [
+      {
+        "key": "relocation",
+        "kind": "hard",
+        "accepted_values": ["remote"],
+        "rejected_values": ["onsite"],
+        "penalty": 1.0
+      }
+    ],
+    "aspirations": [
+      {"name": "fractional data ai leadership", "weight": 0.9},
+      {"name": "business ownership", "weight": 0.8}
+    ],
+    "target_problem_areas": ["retention", "growth", "ai implementation"]
+  },
+  "opportunity": {
+    "company_hint": "Example Consumer Tech",
+    "raw_text": "Company: Example Consumer Tech\nRole: Fractional Data & AI Lead\nLocation: Remote\nWe need help with product analytics, customer retention, growth experimentation and practical AI implementation."
+  }
+}
