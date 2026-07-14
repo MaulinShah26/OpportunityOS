@@ -1,26 +1,32 @@
 # Implementation status
 
-## Completed in v0.3.0
+## Completed through v0.4.0
 
-- All v0.2 persistent onboarding, analysis, and feedback capabilities
-- Inspectable memory for capabilities, preferences, constraints, aspirations, and problem areas
-- Confirm, update, reject, and soft-delete controls for individual memory items
-- Memory status, provenance, confidence, and user-override metadata
-- Durable memory audit history with before/after snapshots and actor attribution
-- Protection preventing implicit behaviour from overriding explicit preferences
-- Protection preventing learning from silently reactivating rejected or deleted memories
-- Claim-level validation of hypothesis evidence references
-- Confidence and speculation guardrails
+- FastAPI application with stateless and persistent analysis endpoints
+- JSON profile onboarding from resume text
+- `.txt`, `.pdf`, and `.docx` resume upload onboarding
+- Deterministic capability and problem-area inference
+- Persistent user and structured personal profile records
+- Structured capability, preference, constraint, aspiration, and problem-area memory
+- Persistent company, opportunity, evidence, and analysis-run records
+- Persistent explicit and implicit feedback events
+- Feedback-driven profile updates with bounded learning rules
+- User-controlled confirm, update, reject, and delete actions for memory
+- Memory audit history with actor, reason, and before/after snapshots
+- Evidence-lineage and unsupported-outreach guardrails
 - Critic result attached to every analysis
-- Unsupported company-specific outreach claims blocked deterministically
-- Backward-compatible critic marker for analyses stored before v0.3
-- Alembic migration for memory lifecycle and audit records
-- 24 passing automated tests
+- SQLite development/test support and PostgreSQL production configuration
+- Raw resume files and text deliberately excluded from persistence
+- Same-origin web workspace served by FastAPI
+- Web onboarding with explicit engagement, work-mode, aspiration, problem-area, and exclusion inputs
+- Opportunity submission, fit-score explanation, evidence, critic, and outreach views
+- Learned-memory controls and memory audit interface
+- 31 passing automated tests
 
 ## Next implementation increment
 
-1. Build a minimal web interface for onboarding, analysis, and memory review.
-2. Add side-by-side opportunity comparison and recommendation explanations.
-3. Create the fixed evaluation dataset and relevance scorecard.
-4. Add outcome capture beyond immediate feedback.
-5. Begin narrowly scoped opportunity discovery only after evaluation thresholds are met.
+1. Add production authentication and user sessions.
+2. Create a fixed evaluation dataset and human relevance-review workflow.
+3. Add opportunity history, saved decisions, and follow-up state.
+4. Deploy a private staging environment with PostgreSQL.
+5. Add selected public-source discovery only after relevance precision is validated.
