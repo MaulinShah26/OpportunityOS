@@ -4,6 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
+from fastapi.staticfiles import StaticFiles
 
 from opportunityos.api.dependencies import get_analysis_service, get_store
 from opportunityos.application.learning import apply_feedback
@@ -36,13 +37,17 @@ from opportunityos.infrastructure.database import (
 )
 from opportunityos.infrastructure.resume import UnsupportedResumeError, extract_resume_text
 from opportunityos.orchestration.crewai_runtime import execute_with_crewai
+from opportunityos.web.routes import STATIC_ROOT
+from opportunityos.web.routes import router as web_router
 
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.3.0",
-    description="Personal opportunity intelligence with user-controlled memory and guardrails",
+    version="0.4.0",
+    description="Personal opportunity intelligence with a user-controlled web workspace",
 )
+app.mount("/static", StaticFiles(directory=STATIC_ROOT), name="static")
+app.include_router(web_router)
 
 
 def _execute_analysis(
