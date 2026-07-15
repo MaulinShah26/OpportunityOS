@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from opportunityos.domain.enums import FeedbackAction, FeedbackReason, OpportunityType
 from opportunityos.domain.models import FeedbackEvent, PersonalProfile, WeightedPreference
+from opportunityos.domain.taxonomy import canonicalise_preference_key
 
 EXPLICIT_MULTIPLIER = 1.0
 IMPLICIT_MULTIPLIER = 0.35
@@ -12,10 +13,12 @@ MAX_SINGLE_UPDATE = 0.08
 
 
 def _find_or_create(profile: PersonalProfile, key: str) -> WeightedPreference:
+    canonical_key = canonicalise_preference_key(key)
     for preference in profile.preferences:
-        if preference.key == key:
+        if canonicalise_preference_key(preference.key) == canonical_key:
+            preference.key = canonical_key
             return preference
-    preference = WeightedPreference(key=key, weight=0.5, explicit=False, confidence=0.4)
+    preference = WeightedPreference(key=canonical_key, weight=0.5, explicit=False, confidence=0.4)
     profile.preferences.append(preference)
     return preference
 
@@ -52,23 +55,23 @@ def apply_feedback(
         key = f"engagement:{opportunity_type.value}"
         pref = _find_or_create(updated, key)
         if _bounded_update(pref, 0.05 * direction, feedback.explicit):
-            changes.append(f"Updated {key} to {pref.weight:.2f}")
+            changes.append(f"Updated {pref.key} to {pref.weight:.2f}")
         else:
-            changes.append(f"Preserved explicit {key}")
+            changes.append(f"Preserved explicit {pref.key}")
 
     if company_industry and direction:
         key = f"industry:{company_industry.strip().lower()}"
         pref = _find_or_create(updated, key)
         if _bounded_update(pref, 0.03 * direction, feedback.explicit):
-            changes.append(f"Updated {key} to {pref.weight:.2f}")
+            changes.append(f"Updated {pref.key} to {pref.weight:.2f}")
         else:
-            changes.append(f"Preserved explicit {key}")
+            changes.append(f"Preserved explicit {pref.key}")
 
     reason_updates = {
         FeedbackReason.LOCATION_MISMATCH: ("location:flexibility", -0.05),
         FeedbackReason.TOO_EXECUTION_HEAVY: ("work_style:execution_only", -0.05),
         FeedbackReason.TOO_JUNIOR: ("seniority:junior", -0.06),
-        FeedbackReason.STRONG_FIT: ("recommendation:similar_profiles", 0.04),
+        FeedbackReason.STRONG_FIT: ("recommendation:similar_opportunities", 0.04),
         FeedbackReason.WRONG_ENGAGEMENT: ("engagement:presented_type", -0.05),
     }
     for reason in feedback.reasons:
@@ -77,8 +80,8 @@ def apply_feedback(
         key, delta = reason_updates[reason]
         pref = _find_or_create(updated, key)
         if _bounded_update(pref, delta, feedback.explicit):
-            changes.append(f"Updated {key} to {pref.weight:.2f}")
+            changes.append(f"Updated {pref.key} to {pref.weight:.2f}")
         else:
-            changes.append(f"Preserved explicit {key}")
+            changes.append(f"Preserved explicit {pref.key}")
 
     return updated, changes
