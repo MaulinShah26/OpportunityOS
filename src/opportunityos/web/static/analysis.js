@@ -39,6 +39,25 @@ function outreachHtml(result) {
   return `<p class="memory-value">No outreach was generated for this decision.</p>`;
 }
 
+function modelRunHtml(result) {
+  const metadata = result.model_metadata || {};
+  if (metadata.mode !== "live") {
+    return `<div class="explanation-box"><strong>Deterministic mock run</strong><p>No paid model call was made.</p></div>`;
+  }
+  const providerSequence = metadata.role_provider_sequence || metadata.provider_order || "Not reported";
+  const reportedInput = metadata.reported_input_tokens || "0";
+  const reportedOutput = metadata.reported_output_tokens || "0";
+  const calls = metadata.model_calls || "0";
+  const fallback = metadata.fallback_used === "true" ? "Yes" : "No";
+  return `
+    <div class="explanation-box">
+      <strong>Bounded live-model run</strong>
+      <p><b>Roles:</b> ${escapeHtml(providerSequence)}</p>
+      <p><b>Calls:</b> ${escapeHtml(calls)} · <b>Reported tokens:</b> ${escapeHtml(reportedInput)} in / ${escapeHtml(reportedOutput)} out</p>
+      <p><b>Fallback used:</b> ${escapeHtml(fallback)} · <b>Call ceiling:</b> ${escapeHtml(metadata.max_calls || "-")}</p>
+    </div>`;
+}
+
 function renderAnalysis(result) {
   state.analysis = result;
   $("#analysis-empty").classList.add("is-hidden");
@@ -106,6 +125,11 @@ function renderAnalysis(result) {
           <p class="section-kicker">Communication</p>
           <h2>Outreach</h2>
           <div style="margin-top:18px">${outreachHtml(result)}</div>
+        </article>
+        <article class="card">
+          <p class="section-kicker">Model run</p>
+          <h2>Provider and budget trace</h2>
+          <div style="margin-top:18px">${modelRunHtml(result)}</div>
         </article>
         <article class="card">
           <p class="section-kicker">Risks</p>

@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from opportunityos.api.dependencies import get_analysis_service, get_store
@@ -35,6 +36,7 @@ from opportunityos.infrastructure.database import (
     ProfileNotFoundError,
     SqlAlchemyStore,
 )
+from opportunityos.infrastructure.llm.runtime import LiveModelBudgetExceeded, LiveModelError
 from opportunityos.infrastructure.resume import UnsupportedResumeError, extract_resume_text
 from opportunityos.orchestration.crewai_runtime import execute_with_crewai
 from opportunityos.web.routes import STATIC_ROOT
@@ -43,11 +45,24 @@ from opportunityos.web.routes import router as web_router
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.4.0",
-    description="Personal opportunity intelligence with a user-controlled web workspace",
+    version="0.6.0",
+    description="Personal opportunity intelligence with bounded, grounded live-model analysis",
 )
 app.mount("/static", StaticFiles(directory=STATIC_ROOT), name="static")
 app.include_router(web_router)
+
+
+@app.exception_handler(LiveModelError)
+def handle_live_model_error(_: Request, exc: LiveModelError) -> JSONResponse:
+    status_code = (
+        status.HTTP_429_TOO_MANY_REQUESTS
+        if isinstance(exc, LiveModelBudgetExceeded)
+        else status.HTTP_503_SERVICE_UNAVAILABLE
+    )
+    return JSONResponse(
+        status_code=status_code,
+        content={"detail": str(exc), "code": type(exc).__name__},
+    )
 
 
 def _execute_analysis(
@@ -61,10 +76,12 @@ def _execute_analysis(
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    providers = "mock" if settings.llm_mode == "mock" else ",".join(settings.configured_live_providers)
     return {
         "status": "ok",
         "llm_mode": settings.llm_mode,
         "orchestrator": settings.orchestrator,
+        "providers": providers,
     }
 
 

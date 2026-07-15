@@ -110,7 +110,8 @@ async function checkHealth() {
   try {
     const health = await api("/health");
     $("#health-dot").classList.add("is-healthy");
-    $("#health-label").textContent = `API ready · ${health.llm_mode}`;
+    const providers = health.llm_mode === "live" && health.providers ? ` · ${health.providers}` : "";
+    $("#health-label").textContent = `API ready · ${health.llm_mode}${providers}`;
   } catch (error) {
     $("#health-dot").classList.add("is-error");
     $("#health-label").textContent = "API unavailable";

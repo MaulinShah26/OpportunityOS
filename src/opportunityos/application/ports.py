@@ -35,3 +35,9 @@ class OutreachWriter(Protocol):
 
 class ResearchProvider(Protocol):
     def collect(self, source: OpportunityInput) -> list[EvidenceClaim]: ...
+
+
+class ModelRuntime(Protocol):
+    def start_run(self) -> None: ...
+
+    def metadata(self) -> dict[str, str]: ...
