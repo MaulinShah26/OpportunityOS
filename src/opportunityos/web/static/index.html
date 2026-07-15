@@ -29,11 +29,14 @@
         <button class="nav-item" data-view="result-view">
           <span class="nav-number">3</span><span>Decision</span>
         </button>
+        <button class="nav-item" data-view="evaluation-view">
+          <span class="nav-number">4</span><span>Evaluation</span>
+        </button>
         <button class="nav-item" data-view="memory-view">
-          <span class="nav-number">4</span><span>Learned memory</span>
+          <span class="nav-number">5</span><span>Learned memory</span>
         </button>
         <button class="nav-item" data-view="audit-view">
-          <span class="nav-number">5</span><span>Audit history</span>
+          <span class="nav-number">6</span><span>Audit history</span>
         </button>
       </nav>
 
@@ -193,6 +196,38 @@
         <div id="analysis-result" class="is-hidden"></div>
       </section>
 
+      <section id="evaluation-view" class="view-panel">
+        <div class="section-toolbar">
+          <div>
+            <p class="section-kicker">Repeatable quality measurement</p>
+            <h2>Benchmark the system against your decisions</h2>
+            <p>Freeze explicitly labelled opportunities so mock, OpenAI, and Claude can be compared on the same profile and inputs.</p>
+          </div>
+          <button id="refresh-evaluations-button" class="button button-secondary" type="button">Refresh</button>
+        </div>
+
+        <article class="card">
+          <div class="card-heading">
+            <div>
+              <p class="section-kicker">New benchmark version</p>
+              <h2>Create a frozen evaluation dataset</h2>
+              <p class="memory-value">The latest explicit feedback for each analysed opportunity becomes its expected decision. Existing datasets never change.</p>
+            </div>
+            <span class="privacy-badge">Private PostgreSQL snapshot</span>
+          </div>
+          <form id="evaluation-dataset-form" class="form-stack compact-form">
+            <label>
+              <span>Dataset name</span>
+              <input name="name" required minlength="2" maxlength="200" placeholder="Opportunity benchmark v1">
+            </label>
+            <button class="button button-primary" type="submit">Create frozen dataset</button>
+          </form>
+        </article>
+
+        <div id="evaluation-datasets" class="evaluation-layout"></div>
+        <div id="evaluation-report" class="evaluation-layout is-hidden"></div>
+      </section>
+
       <section id="memory-view" class="view-panel">
         <div class="section-toolbar">
           <div>
@@ -253,6 +288,7 @@
 
   <script src="/static/core.js" defer></script>
   <script src="/static/analysis.js" defer></script>
+  <script src="/static/evaluation.js" defer></script>
   <script src="/static/memory.js" defer></script>
   <script src="/static/app.js" defer></script>
 </body>
