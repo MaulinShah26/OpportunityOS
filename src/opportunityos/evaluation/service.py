@@ -6,6 +6,7 @@ from opportunityos.application.scoring import (
     DEFAULT_HOLD_THRESHOLD,
     DEFAULT_MIN_EXTRACTION_CONFIDENCE,
     DEFAULT_PURSUE_THRESHOLD,
+    apply_decision_gate_codes,
     decision_for_thresholds,
 )
 from opportunityos.application.service import AnalyseOpportunityService
@@ -38,6 +39,17 @@ def _metadata_int(metadata: dict[str, str], key: str) -> int:
         return max(0, int(metadata.get(key, "0")))
     except (TypeError, ValueError):
         return 0
+
+
+def _metadata_decision(metadata: dict[str, str], key: str) -> Decision | None:
+    try:
+        return Decision(metadata.get(key, ""))
+    except ValueError:
+        return None
+
+
+def _metadata_gate_codes(metadata: dict[str, str]) -> list[str]:
+    return [item.strip() for item in metadata.get("decision_gates", "").split(",") if item.strip()]
 
 
 def _extraction_checks(case: EvaluationCase, result: AnalysisResult) -> tuple[int, int]:
@@ -119,13 +131,16 @@ def _threshold_simulation(completed: list[EvaluationCaseResult]) -> ThresholdSim
     for hold_threshold in range(20, 71):
         for pursue_threshold in range(hold_threshold + 1, 91):
             predictions = [
-                decision_for_thresholds(
-                    fit_total=item.fit_score or 0,
-                    extraction_confidence=item.extraction_confidence or 0.0,
-                    has_hard_constraint_breach=bool(item.actual_hard_constraint_breach),
-                    hold_threshold=hold_threshold,
-                    pursue_threshold=pursue_threshold,
-                    min_extraction_confidence=DEFAULT_MIN_EXTRACTION_CONFIDENCE,
+                apply_decision_gate_codes(
+                    decision_for_thresholds(
+                        fit_total=item.fit_score or 0,
+                        extraction_confidence=item.extraction_confidence or 0.0,
+                        has_hard_constraint_breach=bool(item.actual_hard_constraint_breach),
+                        hold_threshold=hold_threshold,
+                        pursue_threshold=pursue_threshold,
+                        min_extraction_confidence=DEFAULT_MIN_EXTRACTION_CONFIDENCE,
+                    ),
+                    item.decision_gates,
                 )
                 for item in completed
             ]
@@ -198,12 +213,22 @@ def evaluate_dataset(
                 item.name: round(item.score * item.weight * 100, 2)
                 for item in analysis.fit_score.dimensions
             }
+            score_based_decision = _metadata_decision(
+                analysis.model_metadata,
+                "score_based_decision",
+            )
+            decision_gates = _metadata_gate_codes(analysis.model_metadata)
             case_results.append(
                 EvaluationCaseResult(
                     case_id=case.case_id,
                     name=case.name,
                     expected_decision=case.expected_decision,
                     predicted_decision=predicted,
+                    score_based_decision=score_based_decision,
+                    decision_gates=decision_gates,
+                    extracted_company_name=analysis.opportunity.company_name,
+                    extracted_title=analysis.opportunity.title,
+                    extracted_opportunity_type=analysis.opportunity.opportunity_type,
                     correct=predicted == case.expected_decision,
                     decision_distance=abs(
                         _DECISION_POSITION[predicted] - _DECISION_POSITION[case.expected_decision]
@@ -263,6 +288,7 @@ def evaluate_dataset(
             fit_by_label[item.expected_decision.value].append(item.fit_score)
 
     prediction_counts = Counter(item.value for item in predictions)
+    gate_counts = Counter(code for item in completed for code in item.decision_gates)
     confusion_matrix = {
         expected.value: {predicted.value: 0 for predicted in _DECISIONS}
         for expected in _DECISIONS
@@ -331,6 +357,8 @@ def evaluate_dataset(
             label: {"minimum": min(scores), "maximum": max(scores), "average": sum(scores) / len(scores)}
             for label, scores in fit_by_label.items()
         },
+        gated_case_count=sum(bool(item.decision_gates) for item in completed),
+        decision_gate_counts=dict(gate_counts),
         total_model_calls=total_calls,
         total_reported_input_tokens=total_input_tokens,
         total_reported_output_tokens=total_output_tokens,
