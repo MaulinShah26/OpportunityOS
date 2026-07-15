@@ -25,14 +25,20 @@ from opportunityos.domain.relevance import (
 DEFAULT_HOLD_THRESHOLD = 45
 DEFAULT_PURSUE_THRESHOLD = 72
 DEFAULT_MIN_EXTRACTION_CONFIDENCE = 0.60
+MIN_CAPABILITY_FIT_FOR_PURSUE = 0.35
 
 GATE_INSUFFICIENT_OPPORTUNITY_IDENTITY = "insufficient_opportunity_identity"
+GATE_INSUFFICIENT_CAPABILITY_COVERAGE = "insufficient_capability_coverage"
 GATE_JUNIOR_EXECUTION_ONLY = "junior_execution_only_role"
 GATE_EXPLICIT_LOW_OWNERSHIP_AVERSION = "explicit_low_ownership_aversion"
 
 _REJECT_GATES = {
     GATE_JUNIOR_EXECUTION_ONLY,
     GATE_EXPLICIT_LOW_OWNERSHIP_AVERSION,
+}
+_HOLD_GATES = {
+    GATE_INSUFFICIENT_OPPORTUNITY_IDENTITY,
+    GATE_INSUFFICIENT_CAPABILITY_COVERAGE,
 }
 
 
@@ -298,13 +304,26 @@ def _explicit_preference(profile: PersonalProfile | None, key: str) -> WeightedP
     )
 
 
+def _fit_dimension_score(fit: FitScore, name: str) -> float | None:
+    dimension = next((item for item in fit.dimensions if item.name == name), None)
+    return dimension.score if dimension is not None else None
+
+
 def decision_gate_codes(
     profile: PersonalProfile | None,
     opportunity: OpportunityProfile,
+    *,
+    fit: FitScore | None = None,
+    score_decision: Decision | None = None,
 ) -> list[str]:
     gates: list[str] = []
     if has_generic_opportunity_title(opportunity):
         gates.append(GATE_INSUFFICIENT_OPPORTUNITY_IDENTITY)
+
+    if score_decision == Decision.PURSUE and fit is not None:
+        capability_fit = _fit_dimension_score(fit, "capability_fit")
+        if capability_fit is not None and capability_fit < MIN_CAPABILITY_FIT_FOR_PURSUE:
+            gates.append(GATE_INSUFFICIENT_CAPABILITY_COVERAGE)
 
     seniority = opportunity.seniority or infer_seniority(opportunity.title)
     execution_preference = _explicit_preference(profile, "work_style:execution_only")
@@ -325,7 +344,7 @@ def decision_gate_codes(
 def apply_decision_gate_codes(decision: Decision, gate_codes: list[str]) -> Decision:
     if any(code in _REJECT_GATES for code in gate_codes):
         return Decision.REJECT
-    if GATE_INSUFFICIENT_OPPORTUNITY_IDENTITY in gate_codes and decision == Decision.PURSUE:
+    if decision == Decision.PURSUE and any(code in _HOLD_GATES for code in gate_codes):
         return Decision.HOLD
     return decision
 
@@ -340,7 +359,12 @@ def decision_trace(
         extraction_confidence=opportunity.extraction_confidence,
         has_hard_constraint_breach=bool(fit.hard_constraint_breaches),
     )
-    gates = decision_gate_codes(profile, opportunity)
+    gates = decision_gate_codes(
+        profile,
+        opportunity,
+        fit=fit,
+        score_decision=score_decision,
+    )
     return score_decision, gates, apply_decision_gate_codes(score_decision, gates)
 
 
@@ -361,10 +385,10 @@ def recommend(
         return Recommendation(
             decision=Decision.REJECT,
             rationale=(
-                "The role is both junior or unqualified and dominated by execution or reporting work, "
-                "so it is directionally weaker than the user's current path."
+                "The title is unqualified in seniority and the role is centred on analyst or reporting execution, "
+                "which is directionally below the user's current target."
             ),
-            risks=["Low ownership and seniority may make this a poor use of attention."],
+            risks=["The scope may not justify attention relative to higher-ownership alternatives."],
             next_action="Archive it, or override the work-style preference explicitly if this role is exceptional.",
         )
     if GATE_EXPLICIT_LOW_OWNERSHIP_AVERSION in gates:
@@ -383,6 +407,16 @@ def recommend(
             ),
             risks=["The opportunity identity is incomplete, so the apparent fit may be misleading."],
             next_action="Collect a concrete role, engagement type, or business brief before deciding to pursue.",
+        )
+    if GATE_INSUFFICIENT_CAPABILITY_COVERAGE in gates and score_decision == Decision.PURSUE:
+        return Recommendation(
+            decision=Decision.HOLD,
+            rationale=(
+                "The overall score is high, but too few of the role's recognised capability requirements are "
+                "covered strongly enough for a pursue recommendation."
+            ),
+            risks=["Engagement preference and future direction may be masking a material qualification gap."],
+            next_action="Verify the mandatory qualifications and pursue only if the apparent gaps are incorrect.",
         )
     if decision == Decision.PURSUE:
         return Recommendation(
