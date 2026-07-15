@@ -9,7 +9,7 @@ from opportunityos.application.ports import (
     OutreachWriter,
     ResearchProvider,
 )
-from opportunityos.application.scoring import calculate_fit, recommend
+from opportunityos.application.scoring import calculate_fit, decision_trace, recommend
 from opportunityos.domain.enums import CriticSeverity, Decision
 from opportunityos.domain.models import AnalysisRequest, AnalysisResult, GuardrailIssue
 
@@ -47,7 +47,8 @@ class AnalyseOpportunityService:
         )
         hypotheses = self._analyst.analyse(request.profile, opportunity)
         fit_score = calculate_fit(request.profile, opportunity)
-        recommendation = recommend(fit_score, opportunity)
+        score_decision, decision_gates, _ = decision_trace(request.profile, fit_score, opportunity)
+        recommendation = recommend(fit_score, opportunity, request.profile)
         outreach = None
         runtime_issues = list(grounding_issues)
         if recommendation.decision == Decision.PURSUE:
@@ -75,6 +76,13 @@ class AnalyseOpportunityService:
         metadata = dict(self._model_metadata)
         if self._model_runtime is not None:
             metadata.update(self._model_runtime.metadata())
+        metadata.update(
+            {
+                "score_based_decision": score_decision.value,
+                "decision_gates": ",".join(decision_gates),
+                "decision_gate_count": str(len(decision_gates)),
+            }
+        )
 
         return AnalysisResult(
             opportunity=opportunity,
