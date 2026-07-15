@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable
+
 from opportunityos.domain.enums import CriticSeverity, Decision, EvidenceType
 from opportunityos.domain.models import (
     BusinessHypothesis,
@@ -10,17 +13,42 @@ from opportunityos.domain.models import (
     Recommendation,
 )
 
+_TOKEN_RE = re.compile(r"[a-z0-9+#.]+")
+_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "for",
+    "from",
+    "in",
+    "is",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "with",
+}
+
 
 def evaluate_guardrails(
     opportunity: OpportunityProfile,
     hypotheses: list[BusinessHypothesis],
     recommendation: Recommendation,
     outreach: OutreachDraft | None,
+    *,
+    initial_issues: Iterable[GuardrailIssue] = (),
 ) -> CriticResult:
     """Validate evidence lineage and block outreach that contains unsupported claims."""
-    issues: list[GuardrailIssue] = []
+    issues: list[GuardrailIssue] = list(initial_issues)
     evidence_by_id = {item.id: item for item in opportunity.evidence}
-    supported_statements: set[str] = set()
+    supported_statements: set[str] = {
+        _normalise(item.claim) for item in opportunity.evidence
+    }
 
     for hypothesis in hypotheses:
         missing_ids = [item_id for item_id in hypothesis.evidence_ids if item_id not in evidence_by_id]
@@ -52,6 +80,16 @@ def evaluate_guardrails(
 
         linked_evidence = [evidence_by_id[item_id] for item_id in hypothesis.evidence_ids]
         if requires_evidence and linked_evidence:
+            if not _claim_matches_evidence(hypothesis.statement, linked_evidence):
+                issues.append(
+                    GuardrailIssue(
+                        code="evidence_claim_mismatch",
+                        message="The cited evidence does not materially support the hypothesis wording.",
+                        severity=CriticSeverity.BLOCKING,
+                        claim=hypothesis.statement,
+                    )
+                )
+                continue
             max_evidence_confidence = max(item.confidence for item in linked_evidence)
             if hypothesis.confidence > max_evidence_confidence + 0.15:
                 issues.append(
@@ -121,6 +159,32 @@ def evaluate_guardrails(
 
 def _normalise(value: str) -> str:
     return " ".join(value.casefold().split())
+
+
+def _tokens(value: str) -> set[str]:
+    result: set[str] = set()
+    for token in _TOKEN_RE.findall(value.casefold()):
+        if token in _STOPWORDS or len(token) <= 1:
+            continue
+        for suffix in ("ments", "ment", "ing", "ers", "er", "ies", "es", "s"):
+            if len(token) > len(suffix) + 3 and token.endswith(suffix):
+                token = token[:-3] + "y" if suffix == "ies" else token[: -len(suffix)]
+                break
+        result.add(token)
+    return result
+
+
+def _claim_matches_evidence(statement: str, linked_evidence: list[object]) -> bool:
+    claim_tokens = _tokens(statement)
+    if not claim_tokens:
+        return False
+    evidence_text = " ".join(
+        f"{getattr(item, 'claim', '')} {getattr(item, 'supporting_excerpt', '')}"
+        for item in linked_evidence
+    )
+    overlap = claim_tokens & _tokens(evidence_text)
+    required = 1 if len(claim_tokens) <= 3 else max(2, round(len(claim_tokens) * 0.25))
+    return len(overlap) >= required
 
 
 def _unsupported_company_sentences(
