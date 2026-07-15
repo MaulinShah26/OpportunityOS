@@ -12,6 +12,7 @@ function bindEvents() {
   }));
   bindGoButtons();
   bindEvaluationEvents();
+  bindFeedbackEvents();
 
   $("#change-profile-button").addEventListener("click", clearProfile);
 

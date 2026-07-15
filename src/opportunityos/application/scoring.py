@@ -13,9 +13,11 @@ from opportunityos.domain.relevance import (
     RELATED_CONCEPTS,
     engagement_facets,
     extract_concepts,
+    has_generic_opportunity_title,
     infer_seniority,
     infer_work_mode,
     is_execution_only,
+    is_low_ownership,
     meaningful_tokens,
     normalise_text,
 )
@@ -23,6 +25,15 @@ from opportunityos.domain.relevance import (
 DEFAULT_HOLD_THRESHOLD = 45
 DEFAULT_PURSUE_THRESHOLD = 72
 DEFAULT_MIN_EXTRACTION_CONFIDENCE = 0.60
+
+GATE_INSUFFICIENT_OPPORTUNITY_IDENTITY = "insufficient_opportunity_identity"
+GATE_JUNIOR_EXECUTION_ONLY = "junior_execution_only_role"
+GATE_EXPLICIT_LOW_OWNERSHIP_AVERSION = "explicit_low_ownership_aversion"
+
+_REJECT_GATES = {
+    GATE_JUNIOR_EXECUTION_ONLY,
+    GATE_EXPLICIT_LOW_OWNERSHIP_AVERSION,
+}
 
 
 def _clamp(value: float) -> float:
@@ -86,11 +97,16 @@ def _directional_preference_value(preference: WeightedPreference) -> float:
 def _preference_facets(opportunity: OpportunityProfile) -> dict[str, set[str]]:
     work_mode = infer_work_mode(opportunity)
     seniority = opportunity.seniority or infer_seniority(opportunity.title)
+    work_styles: set[str] = set()
+    if is_execution_only(opportunity):
+        work_styles.add("execution only")
+    if is_low_ownership(opportunity):
+        work_styles.add("low ownership")
     return {
         "engagement": {normalise_text(item) for item in engagement_facets(opportunity.opportunity_type)},
         "work_mode": {normalise_text(work_mode)} if work_mode else set(),
         "seniority": {normalise_text(seniority)} if seniority else set(),
-        "work_style": {"execution only"} if is_execution_only(opportunity) else set(),
+        "work_style": work_styles,
         "location": {normalise_text(opportunity.location)} if opportunity.location else set(),
     }
 
@@ -129,6 +145,8 @@ def _candidate_values(opportunity: OpportunityProfile) -> set[str]:
     }
     if is_execution_only(opportunity):
         values.add("execution_only")
+    if is_low_ownership(opportunity):
+        values.add("low_ownership")
     return {normalise_text(value) for value in values if value}
 
 
@@ -256,7 +274,7 @@ def decision_for_thresholds(
     pursue_threshold: int = DEFAULT_PURSUE_THRESHOLD,
     min_extraction_confidence: float = DEFAULT_MIN_EXTRACTION_CONFIDENCE,
 ) -> Decision:
-    """Apply a transparent decision policy without constructing recommendation copy."""
+    """Apply the score and confidence thresholds without user-specific decision gates."""
     if has_hard_constraint_breach:
         return Decision.REJECT
     if fit_total >= pursue_threshold and extraction_confidence >= min_extraction_confidence:
@@ -266,18 +284,105 @@ def decision_for_thresholds(
     return Decision.REJECT
 
 
-def recommend(fit: FitScore, opportunity: OpportunityProfile) -> Recommendation:
-    decision = decision_for_thresholds(
+def _explicit_preference(profile: PersonalProfile | None, key: str) -> WeightedPreference | None:
+    if profile is None:
+        return None
+    normalised_key = key.casefold()
+    return next(
+        (
+            preference
+            for preference in profile.preferences
+            if preference.explicit and preference.key.casefold() == normalised_key
+        ),
+        None,
+    )
+
+
+def decision_gate_codes(
+    profile: PersonalProfile | None,
+    opportunity: OpportunityProfile,
+) -> list[str]:
+    gates: list[str] = []
+    if has_generic_opportunity_title(opportunity):
+        gates.append(GATE_INSUFFICIENT_OPPORTUNITY_IDENTITY)
+
+    seniority = opportunity.seniority or infer_seniority(opportunity.title)
+    execution_preference = _explicit_preference(profile, "work_style:execution_only")
+    execution_override = bool(execution_preference and execution_preference.weight >= 0.65)
+    if seniority in {"intern", "junior", "associate"} and is_execution_only(opportunity) and not execution_override:
+        gates.append(GATE_JUNIOR_EXECUTION_ONLY)
+
+    low_ownership_preference = _explicit_preference(profile, "work_style:low_ownership")
+    if (
+        low_ownership_preference
+        and low_ownership_preference.weight <= 0.40
+        and is_low_ownership(opportunity)
+    ):
+        gates.append(GATE_EXPLICIT_LOW_OWNERSHIP_AVERSION)
+    return gates
+
+
+def apply_decision_gate_codes(decision: Decision, gate_codes: list[str]) -> Decision:
+    if any(code in _REJECT_GATES for code in gate_codes):
+        return Decision.REJECT
+    if GATE_INSUFFICIENT_OPPORTUNITY_IDENTITY in gate_codes and decision == Decision.PURSUE:
+        return Decision.HOLD
+    return decision
+
+
+def decision_trace(
+    profile: PersonalProfile | None,
+    fit: FitScore,
+    opportunity: OpportunityProfile,
+) -> tuple[Decision, list[str], Decision]:
+    score_decision = decision_for_thresholds(
         fit_total=fit.total,
         extraction_confidence=opportunity.extraction_confidence,
         has_hard_constraint_breach=bool(fit.hard_constraint_breaches),
     )
+    gates = decision_gate_codes(profile, opportunity)
+    return score_decision, gates, apply_decision_gate_codes(score_decision, gates)
+
+
+def recommend(
+    fit: FitScore,
+    opportunity: OpportunityProfile,
+    profile: PersonalProfile | None = None,
+) -> Recommendation:
+    score_decision, gates, decision = decision_trace(profile, fit, opportunity)
     if fit.hard_constraint_breaches:
         return Recommendation(
             decision=Decision.REJECT,
             rationale="The opportunity violates a user-defined hard constraint.",
             risks=fit.hard_constraint_breaches,
             next_action="Do not pursue unless the user explicitly changes the relevant constraint.",
+        )
+    if GATE_JUNIOR_EXECUTION_ONLY in gates:
+        return Recommendation(
+            decision=Decision.REJECT,
+            rationale=(
+                "The role is both junior or unqualified and dominated by execution or reporting work, "
+                "so it is directionally weaker than the user's current path."
+            ),
+            risks=["Low ownership and seniority may make this a poor use of attention."],
+            next_action="Archive it, or override the work-style preference explicitly if this role is exceptional.",
+        )
+    if GATE_EXPLICIT_LOW_OWNERSHIP_AVERSION in gates:
+        return Recommendation(
+            decision=Decision.REJECT,
+            rationale="The opportunity conflicts with an explicit learned aversion to low-ownership work.",
+            risks=["The role appears to repeat a work pattern the user previously rejected."],
+            next_action="Archive it unless the source shows materially greater ownership than currently described.",
+        )
+    if GATE_INSUFFICIENT_OPPORTUNITY_IDENTITY in gates and score_decision == Decision.PURSUE:
+        return Recommendation(
+            decision=Decision.HOLD,
+            rationale=(
+                "The score is promising, but the source does not identify a concrete role or engagement clearly "
+                "enough for a pursue recommendation."
+            ),
+            risks=["The opportunity identity is incomplete, so the apparent fit may be misleading."],
+            next_action="Collect a concrete role, engagement type, or business brief before deciding to pursue.",
         )
     if decision == Decision.PURSUE:
         return Recommendation(

@@ -41,8 +41,12 @@ function outreachHtml(result) {
 
 function modelRunHtml(result) {
   const metadata = result.model_metadata || {};
+  const gateCodes = String(metadata.decision_gates || "").split(",").filter(Boolean);
+  const decisionTrace = gateCodes.length
+    ? `<p><b>Decision gates:</b> ${gateCodes.map((code) => escapeHtml(humanise(code))).join(", ")} · <b>score policy:</b> ${escapeHtml(metadata.score_based_decision || "-")}</p>`
+    : `<p><b>Decision gates:</b> none</p>`;
   if (metadata.mode !== "live") {
-    return `<div class="explanation-box"><strong>Deterministic mock run</strong><p>No paid model call was made.</p></div>`;
+    return `<div class="explanation-box"><strong>Deterministic mock run</strong><p>No paid model call was made.</p>${decisionTrace}</div>`;
   }
   const providerSequence = metadata.role_provider_sequence || metadata.provider_order || "Not reported";
   const reportedInput = metadata.reported_input_tokens || "0";
@@ -55,6 +59,7 @@ function modelRunHtml(result) {
       <p><b>Roles:</b> ${escapeHtml(providerSequence)}</p>
       <p><b>Calls:</b> ${escapeHtml(calls)} · <b>Reported tokens:</b> ${escapeHtml(reportedInput)} in / ${escapeHtml(reportedOutput)} out</p>
       <p><b>Fallback used:</b> ${escapeHtml(fallback)} · <b>Call ceiling:</b> ${escapeHtml(metadata.max_calls || "-")}</p>
+      ${decisionTrace}
     </div>`;
 }
 
@@ -116,36 +121,36 @@ function renderAnalysis(result) {
         </article>
       </div>
       <div class="result-column">
-        <article class="card">
-          <p class="section-kicker">Critic</p>
-          <h2>Evidence and claim guardrails</h2>
-          <div style="margin-top:18px">${criticHtml(result.critic)}</div>
-        </article>
-        <article class="card">
-          <p class="section-kicker">Communication</p>
-          <h2>Outreach</h2>
-          <div style="margin-top:18px">${outreachHtml(result)}</div>
-        </article>
-        <article class="card">
-          <p class="section-kicker">Model run</p>
-          <h2>Provider and budget trace</h2>
-          <div style="margin-top:18px">${modelRunHtml(result)}</div>
-        </article>
-        <article class="card">
-          <p class="section-kicker">Risks</p>
-          <h2>What to watch</h2>
-          <div style="margin-top:16px">${renderList(result.recommendation.risks, (risk) => `<div class="issue-card warning"><p>${escapeHtml(risk)}</p></div>`, "No specific risks were recorded.")}</div>
-        </article>
+        <article class="card"><p class="section-kicker">Critic</p><h2>Evidence and claim guardrails</h2><div style="margin-top:18px">${criticHtml(result.critic)}</div></article>
+        <article class="card"><p class="section-kicker">Communication</p><h2>Outreach</h2><div style="margin-top:18px">${outreachHtml(result)}</div></article>
+        <article class="card"><p class="section-kicker">Model run</p><h2>Provider and budget trace</h2><div style="margin-top:18px">${modelRunHtml(result)}</div></article>
+        <article class="card"><p class="section-kicker">Risks</p><h2>What to watch</h2><div style="margin-top:16px">${renderList(result.recommendation.risks, (risk) => `<div class="issue-card warning"><p>${escapeHtml(risk)}</p></div>`, "No specific risks were recorded.")}</div></article>
       </div>
     </div>`;
   target.classList.remove("is-hidden");
-  $$(".feedback-button", target).forEach((button) => button.addEventListener("click", () => submitFeedback(button.dataset.action, button)));
+  $$(".feedback-button", target).forEach((button) => button.addEventListener("click", () => openFeedbackDialog(button.dataset.action)));
 }
 
-async function submitFeedback(action, button) {
+function openFeedbackDialog(action) {
+  const dialog = $("#feedback-dialog");
+  $("#feedback-action").value = action;
+  const titles = {
+    pursue: "Why is this worth pursuing?",
+    save: "Why are you saving this signal?",
+    reject: "Why is this not relevant?",
+  };
+  $("#feedback-dialog-title").textContent = titles[action] || "Why did you choose this?";
+  $$("input[name='reasons']", dialog).forEach((input) => {
+    input.checked = action === "pursue" && input.value === "strong_fit";
+    const label = input.closest("label");
+    const actions = String(label.dataset.feedbackActions || "").split(" ");
+    label.classList.toggle("is-hidden", !actions.includes(action));
+  });
+  dialog.showModal();
+}
+
+async function submitFeedback(action, reasons, button) {
   if (!state.userId || !state.analysis) return;
-  const reasons = action === "pursue" ? ["strong_fit"] : [];
-  const apiAction = action === "reject" ? "reject" : action;
   setBusy(button, true, "Saving…");
   try {
     await api(`/v1/users/${state.userId}/feedback`, {
@@ -154,17 +159,33 @@ async function submitFeedback(action, button) {
       body: JSON.stringify({
         feedback: {
           analysis_id: state.analysis.analysis_id,
-          action: apiAction,
+          action,
           reasons,
           explicit: true,
         },
       }),
     });
+    $("#feedback-dialog").close();
     await loadProfile(state.userId, true);
-    showNotice("Feedback saved and the personal model was updated.");
+    showNotice("Decision and reasons saved; the personal model was updated transparently.");
   } catch (error) {
     showNotice(error.message, "error");
   } finally {
     setBusy(button, false);
   }
+}
+
+function bindFeedbackEvents() {
+  $("#cancel-feedback").addEventListener("click", () => $("#feedback-dialog").close());
+  $("#close-feedback-dialog").addEventListener("click", () => $("#feedback-dialog").close());
+  $("#feedback-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const action = $("#feedback-action").value;
+    const reasons = $$("input[name='reasons']:checked", event.currentTarget).map((input) => input.value);
+    if (!reasons.length) {
+      showNotice("Choose at least one reason so the system learns the right signal.", "error");
+      return;
+    }
+    await submitFeedback(action, reasons, $("#submit-feedback"));
+  });
 }

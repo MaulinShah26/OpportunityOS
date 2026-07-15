@@ -77,6 +77,11 @@ class EvaluationCaseResult(BaseModel):
     name: str
     expected_decision: Decision
     predicted_decision: Decision | None = None
+    score_based_decision: Decision | None = None
+    decision_gates: list[str] = Field(default_factory=list)
+    extracted_company_name: str | None = None
+    extracted_title: str | None = None
+    extracted_opportunity_type: OpportunityType | None = None
     correct: bool = False
     decision_distance: int | None = None
     fit_score: int | None = None
@@ -119,6 +124,8 @@ class EvaluationMetrics(BaseModel):
     confusion_matrix: dict[str, dict[str, int]] = Field(default_factory=dict)
     average_fit_by_expected_decision: dict[str, float] = Field(default_factory=dict)
     score_ranges_by_expected_decision: dict[str, dict[str, float]] = Field(default_factory=dict)
+    gated_case_count: int = Field(default=0, ge=0)
+    decision_gate_counts: dict[str, int] = Field(default_factory=dict)
     total_model_calls: int = Field(ge=0)
     total_reported_input_tokens: int = Field(ge=0)
     total_reported_output_tokens: int = Field(ge=0)

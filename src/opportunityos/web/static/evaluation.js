@@ -64,6 +64,18 @@ function signedScore(value) {
   return `${numeric >= 0 ? "+" : ""}${numeric}`;
 }
 
+function decisionGateHtml(item) {
+  const gates = item.decision_gates || [];
+  if (!gates.length) return `<p>Decision gates: none</p>`;
+  const scoreDecision = item.score_based_decision || item.predicted_decision || "unknown";
+  return `
+    <div class="issue-card warning">
+      <p><strong>Decision gate applied</strong></p>
+      <p>Score policy said ${escapeHtml(scoreDecision)}; final decision became ${escapeHtml(item.predicted_decision)}.</p>
+      <p>${gates.map((code) => escapeHtml(humanise(code))).join(", ")}</p>
+    </div>`;
+}
+
 function fitDiagnosticsHtml(item) {
   const contributions = Object.entries(item.fit_contributions || {})
     .sort((left, right) => right[1] - left[1])
@@ -85,6 +97,7 @@ function fitDiagnosticsHtml(item) {
         <div class="diagnostic-row"><span>Margin above PURSUE threshold</span><strong>${signedScore(item.distance_to_pursue_threshold)}</strong></div>
         ${contributions}
       </div>
+      ${decisionGateHtml(item)}
       ${issueCodes}
     </details>`;
 }
@@ -98,11 +111,19 @@ function caseResultHtml(item) {
       </div>`;
   }
   const predicted = item.predicted_decision || "unknown";
+  const company = item.extracted_company_name || item.analysis?.opportunity?.company_name || "Unknown company";
+  const title = item.extracted_title || item.analysis?.opportunity?.title || item.name;
+  const opportunityType = item.extracted_opportunity_type || item.analysis?.opportunity?.opportunity_type;
+  const currentIdentity = `${company} — ${title}`;
+  const frozenLabel = currentIdentity !== item.name
+    ? `<p class="memory-value">Frozen case label: ${escapeHtml(item.name)}</p>`
+    : "";
   return `
     <div class="evaluation-case ${item.correct ? "is-correct" : "is-mismatch"}">
       <div>
-        <strong>${escapeHtml(item.name)}</strong>
-        <p>Expected ${escapeHtml(item.expected_decision)} · predicted ${escapeHtml(predicted)} · fit ${item.fit_score}</p>
+        <strong>${escapeHtml(currentIdentity)}</strong>
+        ${frozenLabel}
+        <p>Expected ${escapeHtml(item.expected_decision)} · predicted ${escapeHtml(predicted)} · fit ${item.fit_score}${opportunityType ? ` · ${escapeHtml(humanise(opportunityType))}` : ""}</p>
         <p>${item.evidence_count} evidence claims · ${item.hypothesis_count} hypotheses · critic ${item.critic_passed ? "passed" : "flagged"}</p>
         ${fitDiagnosticsHtml(item)}
       </div>
@@ -121,8 +142,9 @@ function predictionPatternHtml(metrics) {
         <div class="stat-box"><strong>${metrics.prediction_labels?.reject || 0}</strong><span>predicted reject</span></div>
         <div class="stat-box"><strong>${percentage(metrics.underprediction_rate)}</strong><span>underprediction</span></div>
         <div class="stat-box"><strong>${percentage(metrics.overprediction_rate)}</strong><span>overprediction</span></div>
+        <div class="stat-box"><strong>${metrics.gated_case_count || 0}</strong><span>gated cases</span></div>
       </div>
-      <p class="memory-value">Underprediction means the system chose a more conservative action than your frozen label. Overprediction means it chose a more aggressive action.</p>
+      <p class="memory-value">Underprediction means the system chose a more conservative action than your frozen label. Overprediction means it chose a more aggressive action. Gates can cap a high score when identity or work-style evidence is unsafe.</p>
     </article>`;
 }
 

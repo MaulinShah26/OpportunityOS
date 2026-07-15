@@ -74,215 +74,98 @@
               <span class="privacy-badge">Raw file is not stored</span>
             </div>
             <form id="onboarding-form" class="form-stack">
-              <label>
-                <span>Name</span>
-                <input name="display_name" required minlength="2" placeholder="Your name">
-              </label>
-              <label>
-                <span>Current direction</span>
-                <input name="headline" placeholder="e.g. Fractional Data and AI leader">
-              </label>
-              <label>
-                <span>Email <small>optional</small></span>
-                <input name="email" type="email" placeholder="you@example.com">
-              </label>
-              <label class="file-field">
-                <span>Résumé</span>
-                <input name="file" type="file" required accept=".txt,.pdf,.docx">
-                <small>TXT, PDF or DOCX. Maximum 5 MB.</small>
-              </label>
+              <label><span>Name</span><input name="display_name" required minlength="2" placeholder="Your name"></label>
+              <label><span>Current direction</span><input name="headline" placeholder="e.g. Fractional Data and AI leader"></label>
+              <label><span>Email <small>optional</small></span><input name="email" type="email" placeholder="you@example.com"></label>
+              <label class="file-field"><span>Résumé</span><input name="file" type="file" required accept=".txt,.pdf,.docx"><small>TXT, PDF or DOCX. Maximum 5 MB.</small></label>
               <div class="two-column-fields">
-                <label>
-                  <span>Preferred engagement <small>optional</small></span>
-                  <select name="preferred_engagement">
-                    <option value="">Open to different models</option>
-                    <option value="fractional">Fractional</option>
-                    <option value="consulting">Consulting project</option>
-                    <option value="contract">Contract</option>
-                    <option value="full_time">Full-time</option>
-                    <option value="advisory">Advisory</option>
-                    <option value="partnership">Partnership</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Preferred work mode <small>optional</small></span>
-                  <select name="work_mode">
-                    <option value="">No strong preference</option>
-                    <option value="remote">Remote</option>
-                    <option value="hybrid">Hybrid</option>
-                    <option value="onsite">On-site</option>
-                  </select>
-                </label>
+                <label><span>Preferred engagement <small>optional</small></span><select name="preferred_engagement"><option value="">Open to different models</option><option value="fractional">Fractional</option><option value="consulting">Consulting project</option><option value="contract">Contract</option><option value="full_time">Full-time</option><option value="advisory">Advisory</option><option value="partnership">Partnership</option></select></label>
+                <label><span>Preferred work mode <small>optional</small></span><select name="work_mode"><option value="">No strong preference</option><option value="remote">Remote</option><option value="hybrid">Hybrid</option><option value="onsite">On-site</option></select></label>
               </div>
-              <label>
-                <span>Future directions <small>comma-separated, optional</small></span>
-                <input name="aspirations" placeholder="AI product leadership, independent consulting">
-              </label>
-              <label>
-                <span>Problems you want to solve <small>comma-separated, optional</small></span>
-                <input name="problem_areas" placeholder="Retention, forecasting, AI implementation">
-              </label>
-              <label>
-                <span>Hard exclusions <small>comma-separated, optional</small></span>
-                <input name="hard_exclusions" placeholder="Permanent relocation, junior roles">
-              </label>
+              <label><span>Future directions <small>comma-separated, optional</small></span><input name="aspirations" placeholder="AI product leadership, independent consulting"></label>
+              <label><span>Problems you want to solve <small>comma-separated, optional</small></span><input name="problem_areas" placeholder="Retention, forecasting, AI implementation"></label>
+              <label><span>Hard exclusions <small>comma-separated, optional</small></span><input name="hard_exclusions" placeholder="Permanent relocation, junior roles"></label>
               <button class="button button-primary" type="submit">Create personal model</button>
             </form>
           </article>
 
           <article class="card">
-            <div class="card-heading">
-              <div>
-                <p class="section-kicker">Returning user</p>
-                <h2>Load an existing profile</h2>
-              </div>
-            </div>
-            <form id="load-profile-form" class="form-stack compact-form">
-              <label>
-                <span>Profile ID</span>
-                <input id="profile-id-input" name="user_id" required placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-              </label>
-              <button class="button button-secondary" type="submit">Load profile</button>
-            </form>
-            <div class="explanation-box">
-              <strong>Why an ID?</strong>
-              <p>This version has no account system yet. The profile ID is stored only in this browser for quick return access.</p>
-            </div>
+            <div class="card-heading"><div><p class="section-kicker">Returning user</p><h2>Load an existing profile</h2></div></div>
+            <form id="load-profile-form" class="form-stack compact-form"><label><span>Profile ID</span><input id="profile-id-input" name="user_id" required placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></label><button class="button button-secondary" type="submit">Load profile</button></form>
+            <div class="explanation-box"><strong>Why an ID?</strong><p>This version has no account system yet. The profile ID is stored only in this browser for quick return access.</p></div>
           </article>
         </div>
-
         <article id="profile-summary" class="card is-hidden"></article>
       </section>
 
       <section id="analyse-view" class="view-panel">
         <article class="card">
-          <div class="card-heading">
-            <div>
-              <p class="section-kicker">Single-opportunity analysis</p>
-              <h2>Give OpportunityOS something real to evaluate</h2>
-            </div>
-            <span class="selective-badge">One opportunity at a time</span>
-          </div>
+          <div class="card-heading"><div><p class="section-kicker">Single-opportunity analysis</p><h2>Give OpportunityOS something real to evaluate</h2></div><span class="selective-badge">One opportunity at a time</span></div>
           <form id="analysis-form" class="form-stack">
             <div class="two-column-fields">
-              <label>
-                <span>Company name <small>optional</small></span>
-                <input name="company_hint" placeholder="Company or organisation">
-              </label>
-              <label>
-                <span>Public URL <small>optional</small></span>
-                <input name="source_url" type="url" placeholder="https://company.com/careers/role">
-              </label>
+              <label><span>Company name <small>optional</small></span><input name="company_hint" placeholder="Company or organisation"></label>
+              <label><span>Public URL <small>optional</small></span><input name="source_url" type="url" placeholder="https://company.com/careers/role"></label>
             </div>
-            <label>
-              <span>Opportunity, role or company signal</span>
-              <textarea name="raw_text" rows="13" placeholder="Paste a job description, consulting brief, founder post or a company signal. Include the role, location, engagement type and business problem when available."></textarea>
-            </label>
-            <div class="form-action-row">
-              <p>At least a URL or pasted text is required.</p>
-              <button class="button button-primary" type="submit">Analyse relevance</button>
-            </div>
+            <label><span>Opportunity, role or company signal</span><textarea name="raw_text" rows="13" placeholder="Paste a job description, consulting brief, founder post or a company signal. Include the role, location, engagement type and business problem when available."></textarea></label>
+            <div class="form-action-row"><p>At least a URL or pasted text is required.</p><button class="button button-primary" type="submit">Analyse relevance</button></div>
           </form>
         </article>
       </section>
 
       <section id="result-view" class="view-panel">
-        <div id="analysis-empty" class="empty-state">
-          <div class="empty-icon">↗</div>
-          <h2>No analysis yet</h2>
-          <p>Submit a real opportunity to see its evidence, personalised fit, risks and safe next action.</p>
-          <button class="button button-secondary" data-go="analyse-view" type="button">Analyse an opportunity</button>
-        </div>
+        <div id="analysis-empty" class="empty-state"><div class="empty-icon">↗</div><h2>No analysis yet</h2><p>Submit a real opportunity to see its evidence, personalised fit, risks and safe next action.</p><button class="button button-secondary" data-go="analyse-view" type="button">Analyse an opportunity</button></div>
         <div id="analysis-result" class="is-hidden"></div>
       </section>
 
       <section id="evaluation-view" class="view-panel">
-        <div class="section-toolbar">
-          <div>
-            <p class="section-kicker">Repeatable quality measurement</p>
-            <h2>Benchmark the system against your decisions</h2>
-            <p>Freeze explicitly labelled opportunities so mock, OpenAI, and Claude can be compared on the same profile and inputs.</p>
-          </div>
-          <button id="refresh-evaluations-button" class="button button-secondary" type="button">Refresh</button>
-        </div>
-
-        <article class="card">
-          <div class="card-heading">
-            <div>
-              <p class="section-kicker">New benchmark version</p>
-              <h2>Create a frozen evaluation dataset</h2>
-              <p class="memory-value">The latest explicit feedback for each analysed opportunity becomes its expected decision. Existing datasets never change.</p>
-            </div>
-            <span class="privacy-badge">Private PostgreSQL snapshot</span>
-          </div>
-          <form id="evaluation-dataset-form" class="form-stack compact-form">
-            <label>
-              <span>Dataset name</span>
-              <input name="name" required minlength="2" maxlength="200" placeholder="Opportunity benchmark v1">
-            </label>
-            <button class="button button-primary" type="submit">Create frozen dataset</button>
-          </form>
-        </article>
-
+        <div class="section-toolbar"><div><p class="section-kicker">Repeatable quality measurement</p><h2>Benchmark the system against your decisions</h2><p>Freeze explicitly labelled opportunities so mock, OpenAI, and Claude can be compared on the same profile and inputs.</p></div><button id="refresh-evaluations-button" class="button button-secondary" type="button">Refresh</button></div>
+        <article class="card"><div class="card-heading"><div><p class="section-kicker">New benchmark version</p><h2>Create a frozen evaluation dataset</h2><p class="memory-value">The latest explicit feedback for each analysed opportunity becomes its expected decision. Existing datasets never change.</p></div><span class="privacy-badge">Private PostgreSQL snapshot</span></div><form id="evaluation-dataset-form" class="form-stack compact-form"><label><span>Dataset name</span><input name="name" required minlength="2" maxlength="200" placeholder="Opportunity benchmark v1"></label><button class="button button-primary" type="submit">Create frozen dataset</button></form></article>
         <div id="evaluation-datasets" class="evaluation-layout"></div>
         <div id="evaluation-report" class="evaluation-layout is-hidden"></div>
       </section>
 
       <section id="memory-view" class="view-panel">
-        <div class="section-toolbar">
-          <div>
-            <p class="section-kicker">User-controlled personalisation</p>
-            <h2>What OpportunityOS believes about you</h2>
-            <p>Confirm accurate inferences, correct them, or reject them. Explicit decisions always outrank implicit behaviour.</p>
-          </div>
-          <div class="toolbar-actions">
-            <label class="toggle-label"><input id="include-inactive-toggle" type="checkbox"> Show inactive</label>
-            <button id="refresh-memory-button" class="button button-secondary" type="button">Refresh</button>
-          </div>
-        </div>
+        <div class="section-toolbar"><div><p class="section-kicker">User-controlled personalisation</p><h2>What OpportunityOS believes about you</h2><p>Confirm accurate inferences, correct them, or reject them. Explicit decisions always outrank implicit behaviour.</p></div><div class="toolbar-actions"><label class="toggle-label"><input id="include-inactive-toggle" type="checkbox"> Show inactive</label><button id="refresh-memory-button" class="button button-secondary" type="button">Refresh</button></div></div>
         <div id="memory-content" class="memory-layout"></div>
       </section>
 
       <section id="audit-view" class="view-panel">
-        <div class="section-toolbar">
-          <div>
-            <p class="section-kicker">Transparency</p>
-            <h2>Memory audit history</h2>
-            <p>Every material change records the actor, action, reason and before/after state.</p>
-          </div>
-          <button id="refresh-audit-button" class="button button-secondary" type="button">Refresh</button>
-        </div>
+        <div class="section-toolbar"><div><p class="section-kicker">Transparency</p><h2>Memory audit history</h2><p>Every material change records the actor, action, reason and before/after state.</p></div><button id="refresh-audit-button" class="button button-secondary" type="button">Refresh</button></div>
         <div id="audit-content" class="audit-list"></div>
       </section>
     </main>
   </div>
 
+  <dialog id="feedback-dialog" class="modal">
+    <form id="feedback-form" method="dialog">
+      <div class="modal-heading"><div><p class="section-kicker">Teach the personal model</p><h2 id="feedback-dialog-title">Why did you choose this?</h2></div><button id="close-feedback-dialog" class="icon-button" type="button" aria-label="Close">×</button></div>
+      <input id="feedback-action" type="hidden">
+      <p id="feedback-dialog-help" class="memory-value">Choose at least one reason. Explicit feedback remains visible and reversible in learned memory.</p>
+      <div id="feedback-reason-options" class="form-stack">
+        <label data-feedback-actions="pursue save"><span><input type="checkbox" name="reasons" value="strong_fit"> Strong fit with my direction</span></label>
+        <label data-feedback-actions="save"><span><input type="checkbox" name="reasons" value="missing_information"> Interesting, but important information is missing</span></label>
+        <label data-feedback-actions="save reject"><span><input type="checkbox" name="reasons" value="interesting_company_wrong_opportunity"> Interesting company, wrong opportunity</span></label>
+        <label data-feedback-actions="save reject"><span><input type="checkbox" name="reasons" value="wrong_role"> Wrong role or scope</span></label>
+        <label data-feedback-actions="save reject"><span><input type="checkbox" name="reasons" value="wrong_engagement"> Wrong engagement model</span></label>
+        <label data-feedback-actions="save reject"><span><input type="checkbox" name="reasons" value="wrong_company"> Wrong company</span></label>
+        <label data-feedback-actions="save reject"><span><input type="checkbox" name="reasons" value="location_mismatch"> Location or work-mode mismatch</span></label>
+        <label data-feedback-actions="save reject"><span><input type="checkbox" name="reasons" value="compensation_mismatch"> Compensation mismatch</span></label>
+        <label data-feedback-actions="reject"><span><input type="checkbox" name="reasons" value="too_junior"> Too junior</span></label>
+        <label data-feedback-actions="reject"><span><input type="checkbox" name="reasons" value="too_execution_heavy"> Too execution-heavy</span></label>
+        <label data-feedback-actions="reject"><span><input type="checkbox" name="reasons" value="low_ownership"> Too little ownership</span></label>
+      </div>
+      <div class="modal-actions"><button id="cancel-feedback" class="button button-ghost" type="button">Cancel</button><button id="submit-feedback" class="button button-primary" type="submit">Save decision</button></div>
+    </form>
+  </dialog>
+
   <dialog id="memory-dialog" class="modal">
     <form id="memory-edit-form" method="dialog">
-      <div class="modal-heading">
-        <div>
-          <p class="section-kicker">Correct memory</p>
-          <h2>Edit the structured value</h2>
-        </div>
-        <button id="close-memory-dialog" class="icon-button" type="button" aria-label="Close">×</button>
-      </div>
+      <div class="modal-heading"><div><p class="section-kicker">Correct memory</p><h2>Edit the structured value</h2></div><button id="close-memory-dialog" class="icon-button" type="button" aria-label="Close">×</button></div>
       <input id="memory-edit-id" type="hidden">
-      <label>
-        <span>Key</span>
-        <input id="memory-edit-key" required>
-      </label>
-      <label>
-        <span>Value as JSON</span>
-        <textarea id="memory-edit-value" rows="12" spellcheck="false" required></textarea>
-      </label>
-      <label>
-        <span>Reason <small>optional</small></span>
-        <input id="memory-edit-reason" placeholder="Why are you correcting this?">
-      </label>
-      <div class="modal-actions">
-        <button class="button button-ghost" value="cancel" type="button" id="cancel-memory-edit">Cancel</button>
-        <button class="button button-primary" type="submit">Save correction</button>
-      </div>
+      <label><span>Key</span><input id="memory-edit-key" required></label>
+      <label><span>Value as JSON</span><textarea id="memory-edit-value" rows="12" spellcheck="false" required></textarea></label>
+      <label><span>Reason <small>optional</small></span><input id="memory-edit-reason" placeholder="Why are you correcting this?"></label>
+      <div class="modal-actions"><button class="button button-ghost" value="cancel" type="button" id="cancel-memory-edit">Cancel</button><button class="button button-primary" type="submit">Save correction</button></div>
     </form>
   </dialog>
 

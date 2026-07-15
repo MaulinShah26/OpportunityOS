@@ -86,6 +86,23 @@ _EXECUTION_ONLY_MARKERS = (
     "report generation",
 )
 
+_LOW_OWNERSHIP_MARKERS = (
+    "assist with",
+    "support the team",
+    "prepare reports",
+    "report generation",
+    "data entry",
+    "project coordinator",
+    "research assistant",
+)
+
+_GENERIC_TITLE_PREFIXES = (
+    "general opportunity",
+    "opportunity at ",
+    "unspecified opportunity",
+    "unknown opportunity",
+)
+
 
 def normalise_text(value: str) -> str:
     return " ".join(_TOKEN_RE.findall(value.casefold()))
@@ -181,3 +198,15 @@ def is_execution_only(opportunity: OpportunityProfile) -> bool:
         " ".join([opportunity.title, *opportunity.required_skills, *opportunity.responsibilities])
     )
     return any(marker in corpus for marker in _EXECUTION_ONLY_MARKERS)
+
+
+def is_low_ownership(opportunity: OpportunityProfile) -> bool:
+    corpus = normalise_text(
+        " ".join([opportunity.title, *opportunity.problem_areas, *opportunity.responsibilities])
+    )
+    return is_execution_only(opportunity) or any(marker in corpus for marker in _LOW_OWNERSHIP_MARKERS)
+
+
+def has_generic_opportunity_title(opportunity: OpportunityProfile) -> bool:
+    title = normalise_text(opportunity.title)
+    return any(title == prefix.strip() or title.startswith(prefix) for prefix in _GENERIC_TITLE_PREFIXES)
