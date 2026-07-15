@@ -58,6 +58,7 @@ CONCEPT_ALIASES: dict[str, tuple[str, ...]] = {
     "replenishment": ("replenishment", "stockout", "stockouts", "excess inventory"),
     "merchandising": ("merchandising", "merchandise"),
     "business_strategy": ("business strategy", "management consulting", "business consulting"),
+    "consulting": ("independent consulting", "fractional", "consulting", "consultant", "advisory"),
     "operations": ("operations", "operational systems", "operating model"),
     "gaming": ("gaming", "game", "cricket game", "sports game"),
 }
@@ -135,9 +136,19 @@ def infer_seniority(value: str | None) -> str | None:
         ("senior", ("senior", "sr")),
         ("manager", ("manager", "management")),
     )
+    padded = f" {text} "
     for label, markers in patterns:
-        if any(f" {marker} " in f" {text} " for marker in markers):
+        if any(f" {marker} " in padded for marker in markers):
             return label
+    unqualified_junior_titles = (
+        "data analyst",
+        "business analyst",
+        "reporting analyst",
+        "project coordinator",
+        "research assistant",
+    )
+    if any(marker in text for marker in unqualified_junior_titles):
+        return "junior"
     return None
 
 
