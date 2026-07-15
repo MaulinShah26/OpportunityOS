@@ -11,6 +11,7 @@ function bindEvents() {
     activateView(button.dataset.view);
   }));
   bindGoButtons();
+  bindEvaluationEvents();
 
   $("#change-profile-button").addEventListener("click", clearProfile);
 
