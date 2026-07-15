@@ -11,7 +11,7 @@ from opportunityos.domain.models import (
     OutreachDraft,
     PersonalProfile,
 )
-from opportunityos.domain.relevance import infer_seniority, normalise_text
+from opportunityos.domain.relevance import normalise_text
 
 _SKILL_RULES: dict[str, tuple[str, ...]] = {
     "data science": ("data science", "data scientist"),
@@ -139,8 +139,7 @@ class MockOpportunityExtractor:
         else:
             remote = None
 
-        explicit_seniority = _field(text, "seniority", "level")
-        seniority = explicit_seniority or infer_seniority(title)
+        seniority = _field(text, "seniority", "level")
 
         confidence = 0.35 if text else 0.20
         confidence += 0.15 if company_value or source.company_hint else 0.0
