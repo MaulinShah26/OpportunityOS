@@ -2,7 +2,7 @@
 
 This runbook deploys OpportunityOS to a single Linux VM with Docker Compose and PostgreSQL. The application is intentionally bound to the VM loopback interface, and PostgreSQL is never published to the host network.
 
-The staging workspace is reached through an SSH or Identity-Aware Proxy tunnel. Do not create a public firewall rule for port 8000.
+The staging workspace is reached through an SSH or Identity-Aware Proxy tunnel. Do not create a public firewall rule for the application port.
 
 ## Architecture
 
@@ -11,7 +11,7 @@ Browser on your computer
         |
         | SSH / IAP tunnel
         v
-127.0.0.1:8000 on the VM
+127.0.0.1:<STAGING_PORT> on the VM
         |
         v
 OpportunityOS container
@@ -39,7 +39,7 @@ docker --version
 docker compose version
 ```
 
-The VM does not need an inbound rule for port 8000. SSH or IAP access is sufficient.
+The VM does not need an inbound rule for the application port. SSH or IAP access is sufficient.
 
 ## 2. Check out the application
 
@@ -98,31 +98,22 @@ docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f app
 
 ## 5. Open a private tunnel
 
-From your computer or Cloud Shell, substitute the actual VM name and zone:
+From your computer or Cloud Shell, substitute the actual VM name, zone, and configured `STAGING_PORT`:
 
 ```bash
-gcloud compute ssh VM_NAME --zone ZONE -- -N -L 8000:127.0.0.1:8000
+gcloud compute ssh VM_NAME --zone ZONE -- -4 -N \
+  -L 0.0.0.0:8800:127.0.0.1:8800
 ```
 
-For a VM without an external IP:
-
-```bash
-gcloud compute ssh VM_NAME --zone ZONE --tunnel-through-iap -- -N -L 8000:127.0.0.1:8000
-```
+For a VM without an external IP, add `--tunnel-through-iap` before `--`.
 
 Keep the tunnel process running and open:
 
 ```text
-http://127.0.0.1:8000/app/
+http://127.0.0.1:8800/app/
 ```
 
-If local port 8000 is occupied, map another local port while keeping the VM destination unchanged:
-
-```bash
-gcloud compute ssh VM_NAME --zone ZONE -- -N -L 8080:127.0.0.1:8000
-```
-
-Then open `http://127.0.0.1:8080/app/`.
+Cloud Shell Web Preview must use the same local port as the tunnel.
 
 ## 6. Back up PostgreSQL
 
@@ -169,17 +160,62 @@ bash scripts/deploy_staging.sh
 
 Database migrations are forward-applied. Do not downgrade a migrated database casually. Restore the pre-deployment backup when a schema rollback is required.
 
-## 9. Enable live models later
+## 9. Enable bounded live models
 
-Only after mock-mode staging is stable:
+Live mode accepts either OpenAI, Anthropic, or both. A provider is considered configured only when both its API key and model are present.
 
-1. add the OpenAI and Anthropic keys to `.env.staging`;
-2. add the selected model names;
-3. change `LLM_MODE=live`;
-4. redeploy;
-5. verify that unsupported outreach remains blocked by deterministic guardrails.
+Edit the protected environment file without echoing secrets into shell history:
 
-Never put model keys in GitHub, Compose YAML, shell history, screenshots, or application logs.
+```bash
+cd /opt/opportunityos
+sudo nano .env.staging
+```
+
+For OpenAI only:
+
+```text
+LLM_MODE=live
+LLM_PRIMARY_PROVIDER=openai
+OPENAI_API_KEY=<secret>
+OPENAI_MODEL=<model-name>
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=
+```
+
+For Anthropic only, use `LLM_PRIMARY_PROVIDER=anthropic` and populate the Anthropic pair. For provider fallback, configure both pairs and use either a named primary or `auto`.
+
+Keep the initial ceilings conservative:
+
+```text
+LLM_FALLBACK_ENABLED=true
+LLM_MAX_CALLS_PER_ANALYSIS=5
+LLM_MAX_ESTIMATED_INPUT_TOKENS_PER_ANALYSIS=18000
+LLM_MAX_OUTPUT_TOKENS_PER_ANALYSIS=6000
+LLM_MAX_PROMPT_CHARS=60000
+LLM_MAX_SOURCE_CHARS=30000
+LLM_EXTRACTION_MAX_OUTPUT_TOKENS=1200
+LLM_ANALYSIS_MAX_OUTPUT_TOKENS=1600
+LLM_OUTREACH_MAX_OUTPUT_TOKENS=900
+```
+
+Redeploy and verify provider readiness:
+
+```bash
+sudo bash scripts/deploy_staging.sh
+curl --fail --silent http://127.0.0.1:${STAGING_PORT:-8800}/health
+```
+
+The health response lists configured provider names, never keys. Run one known opportunity and inspect the decision screen's **Provider and budget trace**. Confirm:
+
+- provider roles are visible;
+- reported tokens are present when the provider returns usage;
+- fallback remains false for a normal run;
+- unsupported extracted facts appear as critic warnings and do not influence scoring;
+- unsupported outreach is still blocked.
+
+Provider failures return an explicit service error; OpportunityOS never silently downgrades a live run to mock mode. Outreach failure is non-fatal and is shown as a critic warning because the decision itself remains useful.
+
+Never put model keys in GitHub, Compose YAML, command arguments, screenshots, browser fields, or application logs. This staging setup still uses a local permissioned environment file; managed secret storage is required before production.
 
 ## Staging limitations
 
