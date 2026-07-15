@@ -96,12 +96,13 @@ _LOW_OWNERSHIP_MARKERS = (
     "research assistant",
 )
 
-_GENERIC_TITLE_PREFIXES = (
+_GENERIC_TITLES = {
     "general opportunity",
-    "opportunity at ",
     "unspecified opportunity",
     "unknown opportunity",
-)
+    *(f"{opportunity_type.value.replace('_', ' ')} opportunity" for opportunity_type in OpportunityType),
+}
+_GENERIC_TITLE_PREFIXES = ("opportunity at ",)
 
 
 def normalise_text(value: str) -> str:
@@ -209,4 +210,4 @@ def is_low_ownership(opportunity: OpportunityProfile) -> bool:
 
 def has_generic_opportunity_title(opportunity: OpportunityProfile) -> bool:
     title = normalise_text(opportunity.title)
-    return any(title == prefix.strip() or title.startswith(prefix) for prefix in _GENERIC_TITLE_PREFIXES)
+    return title in _GENERIC_TITLES or any(title.startswith(prefix) for prefix in _GENERIC_TITLE_PREFIXES)

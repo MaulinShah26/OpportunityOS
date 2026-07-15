@@ -136,6 +136,20 @@ Responsibilities: Excel reporting, Power Query, dashboard production and report 
     }
 
 
+def test_explicit_full_time_field_outranks_unrelated_partnership_language() -> None:
+    result = _analyse(
+        """Company: genbrothers
+Role: Data Analyst (Excel Power Query)
+Opportunity type: Full-time
+The company works through a strategic partnership programme.
+Responsibilities: Excel reporting, Power Query, dashboard production and report generation.
+"""
+    )
+
+    assert result.opportunity.opportunity_type.value == "full_time"
+    assert result.recommendation.decision == Decision.REJECT
+
+
 def test_single_high_confidence_pasted_source_is_not_treated_as_weak_evidence() -> None:
     result = _analyse(
         """Company: Acme
