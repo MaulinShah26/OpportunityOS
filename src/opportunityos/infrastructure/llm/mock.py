@@ -15,11 +15,11 @@ from opportunityos.domain.relevance import infer_seniority, normalise_text
 
 _SKILL_RULES: dict[str, tuple[str, ...]] = {
     "data science": ("data science", "data scientist"),
-    "analytics": ("analytics", "data analysis"),
+    "analytics": ("analytics", "data analysis", "data analyst"),
     "product analytics": ("product analytics", "product decision intelligence"),
     "retention": ("retention", "churn"),
     "growth": ("growth",),
-    "artificial intelligence": ("artificial intelligence", "generative ai", "gen ai", " ai "),
+    "ai": ("artificial intelligence", "generative ai", "gen ai", " ai "),
     "AI implementation": ("ai implementation", "implementing ai", "practical ai systems"),
     "machine learning": ("machine learning",),
     "forecasting": ("forecasting", "forecast"),
