@@ -62,6 +62,22 @@ def test_vague_high_scoring_signal_is_capped_at_hold() -> None:
     assert "concrete role or engagement" in recommendation.rationale
 
 
+def test_generated_advisory_title_is_still_insufficient_identity() -> None:
+    profile = _profile()
+    opportunity = OpportunityProfile(
+        company_name="Ethos",
+        title="Advisory opportunity",
+        opportunity_type=OpportunityType.ADVISORY,
+        extraction_confidence=0.9,
+    )
+
+    score_decision, gates, final_decision = decision_trace(profile, _fit(76), opportunity)
+
+    assert score_decision == Decision.PURSUE
+    assert GATE_INSUFFICIENT_OPPORTUNITY_IDENTITY in gates
+    assert final_decision == Decision.HOLD
+
+
 def test_junior_execution_only_role_is_rejected_even_when_score_clears_hold() -> None:
     profile = _profile()
     opportunity = OpportunityProfile(
