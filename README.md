@@ -11,14 +11,14 @@ The current vertical slice onboards and persists a personal profile, analyses an
 - a critic result with claim-level guardrails;
 - an outreach draft only when its declared claims are supported;
 - feedback that updates and persists the personal preference model;
-- inspectable and editable user memory with audit history.
+- inspectable and editable user memory with audit history;
+- an inspectable provider, fallback, and token-budget trace for live runs.
 
 ## Architecture principles
 
-- **CrewAI orchestrates** multi-step agent workflows.
-- **OpenAI performs** structured extraction and classification.
-- **Claude performs** nuanced business analysis and outreach reasoning.
-- **Python owns** constraints, scoring, validation, guardrails, and learning updates.
+- **CrewAI optionally orchestrates** the typed workflow; it does not own business truth.
+- **OpenAI and Anthropic are interchangeable providers** for extraction, business hypotheses, and outreach.
+- **Python owns** constraints, scoring, validation, grounding, guardrails, budgets, fallback, and learning updates.
 - **PostgreSQL stores** structured profile, memory, evidence, runs, feedback, audits, and outcomes.
 - **Human approval remains mandatory** before any consequential outbound action.
 
@@ -96,11 +96,13 @@ The same endpoint supports `update` and `reject`. `DELETE` performs a soft delet
 
 Implicit behaviour cannot overwrite an explicit preference or reactivate a user-rejected memory item. Users can deliberately change those items through the memory API.
 
-## Recommendation guardrails
+## Recommendation and grounding guardrails
 
-Every analysis includes a `critic` object. It validates evidence references, flags overstated confidence, distinguishes speculation from supported claims, and blocks outreach when company-specific claims lack valid evidence lineage. A blocked draft is retained inside the critic result for review, but the top-level `outreach` field is removed.
+Every analysis includes a `critic` object. It validates evidence references, checks that cited evidence materially overlaps the hypothesis, flags overstated confidence, distinguishes speculation from supported claims, and blocks outreach when company-specific claims lack valid evidence lineage.
 
-Stored v0.2 analyses remain readable and receive a `legacy_unreviewed` critic marker.
+Live extraction is post-validated against the user-supplied text and captured evidence before scoring. Unsupported locations, compensation, seniority, skills, responsibilities, and problem areas are removed and surfaced as critic warnings rather than silently influencing the decision.
+
+A blocked draft is retained inside the critic result for review, but the top-level `outreach` field is removed. Stored older analyses remain readable and receive a `legacy_unreviewed` critic marker when appropriate.
 
 ## Web workspace
 
@@ -113,7 +115,7 @@ OpportunityOS serves a lightweight interface directly from FastAPI:
 /static/*.js         same-origin API client and interaction logic
 ```
 
-The workspace supports résumé upload, explicit initial preferences and exclusions, loading an existing profile by ID, one-opportunity analysis, evidence and critic review, feedback capture, memory correction, and audit-history inspection. It stores the active profile ID in browser local storage for convenience. This is not an authentication mechanism.
+The decision screen shows the provider used for each live-model role, whether fallback occurred, reported input/output tokens, and the configured call ceiling. No API key or secret is returned to the browser.
 
 No external frontend packages, CDNs, fonts, analytics, or third-party browser scripts are used.
 
@@ -127,7 +129,7 @@ cp .env.staging.example .env.staging
 bash scripts/deploy_staging.sh
 ```
 
-The app binds only to `127.0.0.1`, PostgreSQL is not exposed on the host, and Alembic migrations run before Uvicorn starts. Access the workspace through an SSH or Google Cloud IAP tunnel rather than opening port 8000 publicly.
+The app binds only to `127.0.0.1`, PostgreSQL is not exposed on the host, and Alembic migrations run before Uvicorn starts. Access the workspace through an SSH or Google Cloud IAP tunnel rather than opening the application port publicly.
 
 See [docs/STAGING_DEPLOYMENT.md](docs/STAGING_DEPLOYMENT.md) for deployment, tunnelling, backup, restore, update, and rollback procedures.
 
@@ -135,19 +137,31 @@ See [docs/STAGING_DEPLOYMENT.md](docs/STAGING_DEPLOYMENT.md) for deployment, tun
 
 | Setting | Value | Behaviour |
 |---|---|---|
-| `LLM_MODE` | `mock` | Deterministic local extraction and analysis |
-| `LLM_MODE` | `live` | OpenAI extraction + Claude analysis |
+| `LLM_MODE` | `mock` | Deterministic local extraction and analysis; no paid calls |
+| `LLM_MODE` | `live` | Uses one or two configured providers with bounded fallback |
+| `LLM_PRIMARY_PROVIDER` | `auto`, `openai`, `anthropic` | Selects provider order |
+| `LLM_FALLBACK_ENABLED` | `true`, `false` | Allows the second configured provider after a provider/schema failure |
 | `ORCHESTRATOR` | `local` | Direct application-service orchestration |
 | `ORCHESTRATOR` | `crewai` | CrewAI Flow wrapper around the same typed service |
 
-Live mode requires `OPENAI_API_KEY`, `OPENAI_MODEL`, `ANTHROPIC_API_KEY`, and `ANTHROPIC_MODEL`.
+Live mode requires at least one complete provider pair: API key plus model. A second complete provider is optional. The service refuses to start with partial credentials or an explicitly selected primary provider that is not configured.
+
+Per-analysis ceilings are controlled by:
+
+- `LLM_MAX_CALLS_PER_ANALYSIS`;
+- `LLM_MAX_ESTIMATED_INPUT_TOKENS_PER_ANALYSIS`;
+- `LLM_MAX_OUTPUT_TOKENS_PER_ANALYSIS`;
+- role-specific output-token ceilings;
+- `LLM_MAX_PROMPT_CHARS` and `LLM_MAX_SOURCE_CHARS`.
+
+The runtime checks these limits before making a paid call. Provider errors do not silently downgrade to mock mode.
 
 ## Repository map
 
 ```text
 src/opportunityos/
 ├── api/                 FastAPI routes and dependency wiring
-├── application/         scoring, learning, guardrails, and use-case service
+├── application/         scoring, learning, grounding, guardrails, and use-case service
 ├── domain/              typed business contracts
 ├── infrastructure/      database, LLM, resume, and research adapters
 └── orchestration/       optional CrewAI Flow runtime
@@ -163,6 +177,6 @@ examples/                sample payloads
 - autonomous outreach sending;
 - reinforcement learning;
 - OCR for scanned resumes;
-- a production web interface.
+- public multi-user authentication.
 
-Those are later stages after the relevance, memory-control, evidence-safety, and staging-operability foundations are validated.
+Those are later stages after the relevance, memory-control, evidence-safety, live-model, and staging-operability foundations are validated.
