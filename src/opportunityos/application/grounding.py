@@ -26,6 +26,18 @@ _STOPWORDS = {
     "to",
     "with",
 }
+_GROUNDING_ALIASES: dict[str, tuple[str, ...]] = {
+    "analytics": ("data analyst", "data analysis", "analytical insights", "analytical"),
+    "ai": ("artificial intelligence", "ai driven", "ai tools", "language model"),
+    "powerpoint": ("powerpoint", "slide deck", "presentations"),
+    "storylining": ("storylining", "storyline", "client deliverable structure"),
+    "advisory consulting": (
+        "advisory consultant",
+        "advisory practice",
+        "strategy practice",
+        "consulting practice",
+    ),
+}
 
 
 def _stem(token: str) -> str:
@@ -45,6 +57,10 @@ def _tokens(value: str) -> set[str]:
     }
 
 
+def _normalise(value: str) -> str:
+    return " ".join(_TOKEN_RE.findall(value.casefold()))
+
+
 def _corpus(source: OpportunityInput, evidence: Iterable[EvidenceClaim]) -> str:
     parts = [source.raw_text or "", source.company_hint or "", str(source.source_url or "")]
     for item in evidence:
@@ -52,8 +68,12 @@ def _corpus(source: OpportunityInput, evidence: Iterable[EvidenceClaim]) -> str:
     return "\n".join(parts)
 
 
-def _supported(value: str | None, corpus_tokens: set[str]) -> bool:
+def _supported(value: str | None, corpus_tokens: set[str], corpus_text: str) -> bool:
     if not value:
+        return True
+    normalised_value = _normalise(value)
+    aliases = _GROUNDING_ALIASES.get(normalised_value, ())
+    if any(f" {alias_text} " in f" {corpus_text} " for alias_text in map(_normalise, aliases)):
         return True
     value_tokens = _tokens(value)
     if not value_tokens:
@@ -67,12 +87,13 @@ def _filter_values(
     values: list[str],
     *,
     corpus_tokens: set[str],
+    corpus_text: str,
     field_name: str,
     issues: list[GuardrailIssue],
 ) -> list[str]:
     grounded: list[str] = []
     for value in values:
-        if _supported(value, corpus_tokens):
+        if _supported(value, corpus_tokens, corpus_text):
             grounded.append(value)
             continue
         issues.append(
@@ -95,13 +116,15 @@ def ground_extracted_opportunity(
     grounded = opportunity.model_copy(deep=True)
     grounded.evidence = list(evidence)
     issues: list[GuardrailIssue] = []
-    corpus_tokens = _tokens(_corpus(source, evidence))
+    raw_corpus = _corpus(source, evidence)
+    corpus_tokens = _tokens(raw_corpus)
+    corpus_text = _normalise(raw_corpus)
     removed = 0
     considered = 0
 
     if source.company_hint:
         grounded.company_name = source.company_hint.strip()
-    elif not _supported(grounded.company_name, corpus_tokens):
+    elif not _supported(grounded.company_name, corpus_tokens, corpus_text):
         issues.append(
             GuardrailIssue(
                 code="unsupported_company_name",
@@ -120,7 +143,7 @@ def ground_extracted_opportunity(
         if value is None:
             continue
         considered += 1
-        if _supported(value, corpus_tokens):
+        if _supported(value, corpus_tokens, corpus_text):
             continue
         setattr(grounded, field_name, None)
         removed += 1
@@ -139,6 +162,7 @@ def ground_extracted_opportunity(
         filtered = _filter_values(
             values,
             corpus_tokens=corpus_tokens,
+            corpus_text=corpus_text,
             field_name=field_name.replace("_", " "),
             issues=issues,
         )
