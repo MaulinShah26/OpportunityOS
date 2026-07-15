@@ -11,66 +11,157 @@ from opportunityos.domain.models import (
     OutreachDraft,
     PersonalProfile,
 )
+from opportunityos.domain.relevance import normalise_text
+
+_SKILL_RULES: dict[str, tuple[str, ...]] = {
+    "data science": ("data science", "data scientist"),
+    "analytics": ("analytics", "data analysis", "data analyst"),
+    "product analytics": ("product analytics", "product decision intelligence"),
+    "retention": ("retention", "churn"),
+    "growth": ("growth",),
+    "ai": ("artificial intelligence", "generative ai", "gen ai", " ai "),
+    "AI implementation": ("ai implementation", "implementing ai", "practical ai systems"),
+    "machine learning": ("machine learning",),
+    "forecasting": ("forecasting", "forecast"),
+    "demand forecasting": ("demand forecasting", "demand planning"),
+    "experimentation": ("experimentation", "a/b testing", "ab testing"),
+    "Python": ("python",),
+    "SQL": ("sql",),
+    "Excel": ("excel",),
+    "Power Query": ("power query",),
+    "product management": ("product management", "product manager", "product strategy"),
+    "project management": ("project management", "project manager", "project delivery"),
+    "stakeholder management": ("stakeholder management",),
+    "resource management": ("resource management", "resource planning"),
+    "risk management": ("risk management", "risk handling", "risk mitigation"),
+    "communication": ("communication",),
+    "assortment planning": ("assortment planning", "store-level assortment", "assortment"),
+    "inventory planning": ("inventory planning", "inventory decisions", "excess inventory"),
+    "replenishment": ("replenishment", "stockout", "stockouts"),
+    "merchandising": ("merchandising", "merchandise planning"),
+}
+
+_PROBLEM_RULES: dict[str, tuple[str, ...]] = {
+    "Retention improvement": ("retention", "churn"),
+    "Growth optimisation": ("growth",),
+    "Demand forecasting": ("demand forecasting", "demand planning", "forecasting"),
+    "Experimentation systems": ("experimentation", "a/b testing", "ab testing"),
+    "AI implementation": ("ai implementation", "implementing ai", "practical ai systems"),
+    "Assortment planning": ("assortment planning", "store-level assortment", "assortment"),
+    "Inventory and replenishment": (
+        "inventory planning",
+        "inventory decisions",
+        "replenishment",
+        "stockout",
+        "excess inventory",
+    ),
+    "Project delivery": ("project management", "planning, execution and delivery", "project delivery"),
+    "Risk management": ("risk management", "risk handling", "risk mitigation"),
+    "Product strategy": ("product strategy", "product management"),
+}
+
+
+def _field(text: str, *names: str) -> str | None:
+    alternatives = "|".join(re.escape(name) for name in names)
+    match = re.search(rf"(?:^|\n)\s*(?:{alternatives})\s*:\s*([^\n]+)", text, re.IGNORECASE)
+    return match.group(1).strip(" -*\t") if match else None
+
+
+def _contains(corpus: str, phrase: str) -> bool:
+    normalised_phrase = normalise_text(phrase)
+    return f" {normalised_phrase} " in f" {corpus} "
+
+
+def _matching_labels(corpus: str, rules: dict[str, tuple[str, ...]]) -> list[str]:
+    return [label for label, phrases in rules.items() if any(_contains(corpus, phrase) for phrase in phrases)]
+
+
+def _infer_opportunity_type(text: str, explicit_value: str | None) -> OpportunityType:
+    corpus = normalise_text(" ".join(filter(None, [explicit_value, text])))
+    if "fractional" in corpus:
+        return OpportunityType.FRACTIONAL
+    if "advisory" in corpus or "advisor" in corpus:
+        return OpportunityType.ADVISORY
+    if "consulting" in corpus or "consultant" in corpus or "independent consulting" in corpus:
+        return OpportunityType.CONSULTING
+    if "contract" in corpus or "project based" in corpus:
+        return OpportunityType.CONTRACT
+    if "full time" in corpus or "permanent role" in corpus:
+        return OpportunityType.FULL_TIME
+    if "partnership" in corpus or "partner opportunity" in corpus:
+        return OpportunityType.PARTNERSHIP
+    return OpportunityType.UNKNOWN
+
+
+def _fallback_title(company: str, opportunity_type: OpportunityType) -> str:
+    if opportunity_type != OpportunityType.UNKNOWN:
+        label = opportunity_type.value.replace("_", " ").title()
+        return f"{label} opportunity"
+    if company != "Unknown company":
+        return f"Opportunity at {company}"
+    return "General opportunity"
 
 
 class MockOpportunityExtractor:
     def extract(self, source: OpportunityInput, evidence: list[EvidenceClaim]) -> OpportunityProfile:
         text = (source.raw_text or "").strip()
-        lowered = text.lower()
-        title_match = re.search(r"(?:role|title)\s*:\s*([^\n]+)", text, re.IGNORECASE)
-        company_match = re.search(r"(?:company)\s*:\s*([^\n]+)", text, re.IGNORECASE)
-        title = title_match.group(1).strip() if title_match else "Unspecified opportunity"
-        company = (
-            company_match.group(1).strip()
-            if company_match
-            else source.company_hint or "Unknown company"
-        )
-        if "fractional" in lowered:
-            opportunity_type = OpportunityType.FRACTIONAL
-        elif "consult" in lowered:
-            opportunity_type = OpportunityType.CONSULTING
-        elif "contract" in lowered:
-            opportunity_type = OpportunityType.CONTRACT
-        elif "full-time" in lowered or "full time" in lowered:
-            opportunity_type = OpportunityType.FULL_TIME
+        corpus = normalise_text(text)
+
+        company_value = _field(text, "company", "organisation", "organization", "client")
+        company = company_value or source.company_hint or "Unknown company"
+
+        engagement_value = _field(text, "opportunity type", "engagement", "engagement type")
+        opportunity_type = _infer_opportunity_type(text, engagement_value)
+
+        explicit_title = _field(text, "role", "title", "position")
+        if explicit_title:
+            title = explicit_title
+        elif engagement_value:
+            title = engagement_value
         else:
-            opportunity_type = OpportunityType.UNKNOWN
+            title = _fallback_title(company, opportunity_type)
 
-        known_skills = [
-            "data science",
-            "analytics",
-            "product analytics",
-            "retention",
-            "growth",
-            "ai",
-            "machine learning",
-            "forecasting",
-            "experimentation",
-            "python",
-        ]
-        required_skills = [skill for skill in known_skills if skill in lowered]
-        problem_areas = [
-            skill
-            for skill in ["retention", "growth", "forecasting", "analytics", "ai"]
-            if skill in lowered
-        ]
-        remote = True if "remote" in lowered else False if "onsite" in lowered else None
-        location = None
-        location_match = re.search(r"location\s*:\s*([^\n]+)", text, re.IGNORECASE)
-        if location_match:
-            location = location_match.group(1).strip()
+        required_skills = _matching_labels(corpus, _SKILL_RULES)
+        problem_areas = _matching_labels(corpus, _PROBLEM_RULES)
 
+        location = _field(text, "location")
+        work_mode = _field(text, "work mode", "working model")
+        mode_corpus = normalise_text(" ".join(filter(None, [work_mode, location, text])))
+        if "hybrid" in mode_corpus:
+            remote = True
+            location = location or "Hybrid"
+        elif "remote" in mode_corpus:
+            remote = True
+            location = location or "Remote"
+        elif "onsite" in mode_corpus or "on site" in mode_corpus:
+            remote = False
+            location = location or "Onsite"
+        else:
+            remote = None
+
+        seniority = _field(text, "seniority", "level")
+
+        confidence = 0.35 if text else 0.20
+        confidence += 0.15 if company_value or source.company_hint else 0.0
+        confidence += 0.15 if explicit_title else 0.08 if engagement_value else 0.03
+        confidence += 0.10 if opportunity_type != OpportunityType.UNKNOWN else 0.0
+        confidence += 0.10 if required_skills or problem_areas else 0.0
+        confidence += 0.05 if location or work_mode else 0.0
+        confidence = min(0.92, confidence)
+
+        responsibilities = list(dict.fromkeys([*problem_areas, *required_skills]))
         return OpportunityProfile(
             company_name=company,
             title=title,
             opportunity_type=opportunity_type,
             location=location,
             remote_allowed=remote,
+            seniority=seniority,
             required_skills=required_skills,
-            responsibilities=problem_areas,
+            responsibilities=responsibilities,
             problem_areas=problem_areas,
             evidence=evidence,
-            extraction_confidence=0.75 if text else 0.4,
+            extraction_confidence=confidence,
         )
 
 
