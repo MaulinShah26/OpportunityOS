@@ -41,7 +41,8 @@ def _provider_order(settings: Settings) -> list[ProviderName]:
     if settings.llm_primary_provider == "auto":
         ordered = configured
     else:
-        ordered = [settings.llm_primary_provider, *[item for item in configured if item != settings.llm_primary_provider]]
+        secondary = [item for item in configured if item != settings.llm_primary_provider]
+        ordered = [settings.llm_primary_provider, *secondary]
     return ordered if settings.llm_fallback_enabled else ordered[:1]
 
 
