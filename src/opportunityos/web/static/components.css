@@ -57,6 +57,18 @@
 .toggle-label { display: flex; grid-template-columns: none; flex-direction: row; align-items: center; gap: 7px; color: var(--muted); white-space: nowrap; }
 .toggle-label input { width: auto; }
 
+.evaluation-layout { display: grid; gap: 20px; margin-top: 22px; }
+.evaluation-dataset-card { margin: 0; }
+.evaluation-labels { margin-top: 18px; }
+.evaluation-report-hero { margin-top: 22px; }
+.evaluation-metrics { display: grid; grid-template-columns: repeat(6, minmax(110px, 1fr)); gap: 10px; margin: 22px 0; }
+.evaluation-cases { display: grid; gap: 10px; margin-top: 18px; }
+.evaluation-case { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: start; padding: 16px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-soft); }
+.evaluation-case.is-correct { border-color: #bed4cb; background: var(--accent-soft); }
+.evaluation-case.is-mismatch, .evaluation-case.is-error { border-color: #ead4a2; background: var(--amber-soft); }
+.evaluation-case strong { font-size: 14px; }
+.evaluation-case p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+
 .memory-layout { display: grid; gap: 20px; }
 .memory-group { border: 1px solid var(--line); border-radius: var(--radius); background: white; overflow: hidden; }
 .memory-group-heading { display: flex; justify-content: space-between; padding: 17px 20px; border-bottom: 1px solid var(--line); background: var(--surface-soft); }
@@ -92,6 +104,10 @@
 .loading { padding: 42px; border: 1px solid var(--line); border-radius: 15px; background: white; color: var(--muted); text-align: center; }
 .is-hidden { display: none !important; }
 
+@media (max-width: 1100px) {
+  .evaluation-metrics { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
+}
+
 @media (max-width: 900px) {
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { position: static; height: auto; padding: 16px; }
@@ -107,7 +123,8 @@
 }
 
 @media (max-width: 620px) {
-  .two-column-fields, .profile-overview, .memory-item, .audit-item { grid-template-columns: 1fr; }
+  .two-column-fields, .profile-overview, .memory-item, .audit-item, .evaluation-case { grid-template-columns: 1fr; }
+  .evaluation-metrics { grid-template-columns: repeat(2, minmax(110px, 1fr)); }
   .form-action-row { align-items: stretch; flex-direction: column; }
   .card-heading { flex-direction: column; }
   .toolbar-actions { width: 100%; justify-content: space-between; }
