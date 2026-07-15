@@ -125,12 +125,15 @@ Responsibilities: Excel reporting, Power Query, dashboard production and report 
 """
     )
 
-    assert result.opportunity.seniority == "junior"
+    assert result.opportunity.seniority is None
     preference_dimension = next(
         item for item in result.fit_score.dimensions if item.name == "preference_fit"
     )
     assert preference_dimension.score < 0.30
     assert result.recommendation.decision == Decision.REJECT
+    assert "unsupported_extracted_field" not in {
+        issue.code for issue in result.critic.issues
+    }
 
 
 def test_single_high_confidence_pasted_source_is_not_treated_as_weak_evidence() -> None:
