@@ -46,6 +46,8 @@ class FeedbackReason(str, Enum):
     LOCATION_MISMATCH = "location_mismatch"
     TOO_JUNIOR = "too_junior"
     TOO_EXECUTION_HEAVY = "too_execution_heavy"
+    LOW_OWNERSHIP = "low_ownership"
+    MISSING_INFORMATION = "missing_information"
     INTERESTING_COMPANY_WRONG_OPPORTUNITY = "interesting_company_wrong_opportunity"
 
 
