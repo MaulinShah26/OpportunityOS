@@ -15,8 +15,9 @@ def test_resume_onboarding_extracts_capabilities_and_problem_areas() -> None:
     profile, capabilities, problem_areas = build_profile_from_resume(request)
     assert profile.display_name == "Test User"
     assert "product analytics" in capabilities
-    assert "retention" in problem_areas
-    assert "growth" in problem_areas
+    assert "Retention improvement" in problem_areas
+    assert "Growth optimisation" in problem_areas
+    assert "data science" not in problem_areas
 
 
 def test_resume_onboarding_keeps_explicit_profile_fields() -> None:
@@ -28,4 +29,4 @@ def test_resume_onboarding_keeps_explicit_profile_fields() -> None:
     )
     profile, _, problem_areas = build_profile_from_resume(request)
     assert profile.headline == "Fractional leader"
-    assert problem_areas[0] == "custom priority"
+    assert problem_areas[0] == "Custom priority"

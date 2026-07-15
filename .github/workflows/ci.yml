@@ -66,10 +66,128 @@ jobs:
       - name: Enforce staging build
         if: steps.staging_build.outcome == 'failure'
         run: exit 1
-      - name: Start staging stack
-        run: docker compose --env-file .env.staging -f docker-compose.staging.yml up -d
+      - name: Seed pre-canonicalisation PostgreSQL memory
+        run: |
+          docker compose --env-file .env.staging -f docker-compose.staging.yml up -d --wait postgres
+          docker compose --env-file .env.staging -f docker-compose.staging.yml \
+            run --rm --no-deps --entrypoint alembic app upgrade 0002_memory_guardrails
+          docker compose --env-file .env.staging -f docker-compose.staging.yml \
+            run --rm --no-deps -T --entrypoint python app <<'PY'
+          import os
+          from datetime import datetime, timezone
+
+          from sqlalchemy import create_engine
+          from sqlalchemy.orm import Session
+
+          from opportunityos.infrastructure.database.models import (
+              MemoryItemRecord,
+              PersonalProfileRecord,
+              User,
+          )
+
+          user_id = "00000000-0000-0000-0000-000000000006"
+          now = datetime.now(timezone.utc)
+          profile = {
+              "user_id": user_id,
+              "display_name": "Legacy Memory User",
+              "headline": "Data and AI operator",
+              "capabilities": [
+                  {"name": "data science", "proficiency": 0.82, "evidence": []},
+              ],
+              "preferences": [
+                  {
+                      "key": "recommendation:similar_profiles",
+                      "weight": 0.58,
+                      "explicit": True,
+                      "confidence": 0.9,
+                      "last_updated_at": now.isoformat(),
+                  }
+              ],
+              "constraints": [],
+              "aspirations": [],
+              "target_problem_areas": [
+                  "AI Implementation",
+                  "ai implementation",
+                  "data science",
+                  "growth",
+              ],
+          }
+
+          engine = create_engine(os.environ["DATABASE_URL"])
+          with Session(engine) as session:
+              session.add(User(id=user_id, email="legacy-memory@example.com", display_name="Legacy Memory User"))
+              session.flush()
+              session.add(
+                  PersonalProfileRecord(
+                      user_id=user_id,
+                      headline="Data and AI operator",
+                      profile_json=profile,
+                      version=1,
+                  )
+              )
+              rows = [
+                  ("preference", "recommendation:similar_profiles", profile["preferences"][0], "explicit", 0.9, True, "confirmed"),
+                  ("problem_area", "AI Implementation", {"name": "AI Implementation"}, "inferred", 0.65, False, "active"),
+                  ("problem_area", "ai implementation", {"name": "ai implementation"}, "inferred", 0.65, False, "active"),
+                  ("problem_area", "data science", {"name": "data science"}, "inferred", 0.65, False, "active"),
+                  ("problem_area", "growth", {"name": "growth"}, "inferred", 0.65, False, "active"),
+              ]
+              for category, key, value, source, confidence, overridden, status in rows:
+                  session.add(
+                      MemoryItemRecord(
+                          user_id=user_id,
+                          category=category,
+                          key=key,
+                          value_json=value,
+                          source=source,
+                          confidence=confidence,
+                          expires_at=None,
+                          is_user_overridden=overridden,
+                          status=status,
+                          active=True,
+                          confirmed_at=now if status == "confirmed" else None,
+                          rejected_at=None,
+                      )
+                  )
+              session.commit()
+          engine.dispose()
+          PY
+      - name: Start staging application and apply head migration
+        run: docker compose --env-file .env.staging -f docker-compose.staging.yml up -d app
       - name: Verify health and web workspace
         run: ENV_FILE="$PWD/.env.staging" bash scripts/verify_staging.sh
+      - name: Verify PostgreSQL memory cleanup migration
+        run: |
+          USER_ID="00000000-0000-0000-0000-000000000006"
+          curl --fail --silent --show-error \
+            "http://127.0.0.1:8000/v1/profiles/${USER_ID}" \
+            > migrated-profile.json
+          curl --fail --silent --show-error \
+            "http://127.0.0.1:8000/v1/users/${USER_ID}/memory?include_inactive=true" \
+            > migrated-memory.json
+          curl --fail --silent --show-error \
+            "http://127.0.0.1:8000/v1/users/${USER_ID}/memory-audit" \
+            > migrated-audit.json
+          python3 - <<'PY'
+          import json
+
+          profile = json.load(open("migrated-profile.json"))["profile"]
+          assert profile["target_problem_areas"] == ["AI implementation", "Growth optimisation"]
+          assert [item["key"] for item in profile["preferences"]] == [
+              "recommendation:similar_opportunities"
+          ]
+
+          memory = json.load(open("migrated-memory.json"))["items"]
+          active = {(item["category"], item["key"]) for item in memory if item["active"]}
+          assert ("preference", "recommendation:similar_opportunities") in active
+          assert ("problem_area", "AI implementation") in active
+          assert ("problem_area", "Growth optimisation") in active
+          assert not any(item["key"] == "data science" and item["active"] for item in memory)
+          assert sum(item["key"] == "AI implementation" and item["active"] for item in memory) == 1
+
+          actions = {item["action"] for item in json.load(open("migrated-audit.json"))["events"]}
+          assert {"canonicalised", "merged_duplicate", "removed_category_contamination"} <= actions
+          PY
       - name: Verify PostgreSQL profile onboarding
         run: |
           cat > ci-resume.txt <<'EOF'
@@ -94,6 +212,9 @@ jobs:
           payload = json.load(open("memory-response.json"))
           assert payload["items"], "onboarding did not persist memory"
           assert any(item["category"] == "capability" for item in payload["items"])
+          problem_keys = {item["key"] for item in payload["items"] if item["category"] == "problem_area"}
+          assert "data science" not in problem_keys
+          assert "AI implementation" in problem_keys
           PY
       - name: Show container logs
         if: always()

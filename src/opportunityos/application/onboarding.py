@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 
 from opportunityos.domain.models import Capability, PersonalProfile, ResumeOnboardingRequest
+from opportunityos.domain.taxonomy import canonicalise_problem_areas
 
 
 @dataclass(frozen=True)
@@ -17,34 +18,41 @@ CAPABILITY_RULES = (
     CapabilityRule(
         "product analytics",
         ("product analytics", "product analyst", "product metrics"),
-        ("analytics",),
+        ("product decision intelligence",),
     ),
     CapabilityRule(
         "data science",
         ("data scientist", "data science", "predictive model", "machine learning"),
-        ("data science",),
     ),
     CapabilityRule(
         "artificial intelligence",
         ("artificial intelligence", "generative ai", "agentic ai", " llm", "ai innovation"),
-        ("ai implementation",),
+        ("AI implementation",),
     ),
-    CapabilityRule("retention analytics", ("retention", "cohort", "churn"), ("retention",)),
+    CapabilityRule(
+        "retention analytics",
+        ("retention", "cohort", "churn"),
+        ("retention improvement",),
+    ),
     CapabilityRule(
         "growth analytics",
         ("growth", "conversion", "activation", "funnel"),
-        ("growth",),
+        ("growth optimisation",),
     ),
     CapabilityRule(
         "experimentation",
         ("a/b test", "ab test", "experimentation", "hypothesis testing"),
-        ("experimentation",),
+        ("experimentation systems",),
     ),
-    CapabilityRule("forecasting", ("forecast", "time series", "demand planning"), ("forecasting",)),
+    CapabilityRule(
+        "forecasting",
+        ("forecast", "time series", "demand planning"),
+        ("demand forecasting",),
+    ),
     CapabilityRule(
         "customer data",
         ("customer data platform", "cdp", "identity resolution", "customer 360"),
-        ("data unification",),
+        ("customer data unification",),
     ),
     CapabilityRule(
         "product management",
@@ -54,7 +62,7 @@ CAPABILITY_RULES = (
     CapabilityRule(
         "project management",
         ("project management", "program management", "delivery management", "stakeholder management"),
-        ("delivery",),
+        ("cross-functional delivery",),
     ),
     CapabilityRule("python", ("python", "pandas", "scikit-learn")),
     CapabilityRule("sql", (" sql", "bigquery", "snowflake", "postgresql")),
@@ -109,7 +117,7 @@ def build_profile_from_resume(
             )
         )
 
-    problem_areas = list(dict.fromkeys([*request.target_problem_areas, *inferred_problem_areas]))
+    problem_areas = canonicalise_problem_areas([*request.target_problem_areas, *inferred_problem_areas])
     headline = request.headline or _infer_headline(request.resume_text)
     profile = PersonalProfile(
         display_name=request.display_name,
