@@ -80,7 +80,11 @@ def evaluate_guardrails(
 
         linked_evidence = [evidence_by_id[item_id] for item_id in hypothesis.evidence_ids]
         if requires_evidence and linked_evidence:
-            if not _claim_matches_evidence(hypothesis.statement, linked_evidence):
+            if not _claim_matches_evidence(
+                hypothesis.statement,
+                linked_evidence,
+                opportunity.company_name,
+            ):
                 issues.append(
                     GuardrailIssue(
                         code="evidence_claim_mismatch",
@@ -174,16 +178,21 @@ def _tokens(value: str) -> set[str]:
     return result
 
 
-def _claim_matches_evidence(statement: str, linked_evidence: list[object]) -> bool:
-    claim_tokens = _tokens(statement)
+def _claim_matches_evidence(
+    statement: str,
+    linked_evidence: list[object],
+    company_name: str,
+) -> bool:
+    company_tokens = _tokens(company_name)
+    claim_tokens = _tokens(statement) - company_tokens
     if not claim_tokens:
         return False
     evidence_text = " ".join(
         f"{getattr(item, 'claim', '')} {getattr(item, 'supporting_excerpt', '')}"
         for item in linked_evidence
     )
-    overlap = claim_tokens & _tokens(evidence_text)
-    required = 1 if len(claim_tokens) <= 3 else max(2, round(len(claim_tokens) * 0.25))
+    overlap = claim_tokens & (_tokens(evidence_text) - company_tokens)
+    required = 1 if len(claim_tokens) <= 3 else max(2, round(len(claim_tokens) * 0.3))
     return len(overlap) >= required
 
 
