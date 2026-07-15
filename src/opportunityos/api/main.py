@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from opportunityos.api.dependencies import get_analysis_service, get_store
+from opportunityos.application.factory import provider_order
 from opportunityos.application.learning import apply_feedback
 from opportunityos.application.onboarding import build_profile_from_resume
 from opportunityos.application.service import AnalyseOpportunityService
@@ -29,8 +30,19 @@ from opportunityos.domain.models import (
     ResumeOnboardingRequest,
     UserActivitySummary,
 )
+from opportunityos.evaluation.models import (
+    CreateEvaluationDatasetRequest,
+    EvaluationDataset,
+    EvaluationDatasetCollection,
+    EvaluationReport,
+    EvaluationRunCollection,
+)
+from opportunityos.evaluation.service import evaluate_dataset
 from opportunityos.infrastructure.database import (
     AnalysisNotFoundError,
+    EvaluationDatasetEmptyError,
+    EvaluationDatasetNotFoundError,
+    EvaluationRunNotFoundError,
     MemoryConflictError,
     MemoryNotFoundError,
     ProfileNotFoundError,
@@ -45,8 +57,8 @@ from opportunityos.web.routes import router as web_router
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.6.0",
-    description="Personal opportunity intelligence with bounded, grounded live-model analysis",
+    version="0.7.0",
+    description="Personal opportunity intelligence with repeatable, user-labelled evaluation",
 )
 app.mount("/static", StaticFiles(directory=STATIC_ROOT), name="static")
 app.include_router(web_router)
@@ -72,6 +84,23 @@ def _execute_analysis(
     if settings.orchestrator == "crewai":
         return execute_with_crewai(service, request)
     return service.execute(request)
+
+
+def _evaluation_provider_order() -> str:
+    if settings.llm_mode == "mock":
+        return "mock"
+    return ",".join(provider_order(settings))
+
+
+def _evaluation_model_names() -> dict[str, str]:
+    return {
+        key: value
+        for key, value in {
+            "openai": settings.openai_model,
+            "anthropic": settings.anthropic_model,
+        }.items()
+        if value
+    }
 
 
 @app.get("/health")
@@ -321,3 +350,114 @@ def read_user_activity(
     except ProfileNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
     return UserActivitySummary(user_id=user_id, analysis_count=store.count_user_analyses(user_id))
+
+
+@app.post(
+    "/v1/users/{user_id}/evaluation-datasets",
+    response_model=EvaluationDataset,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_evaluation_dataset(
+    user_id: UUID,
+    request: CreateEvaluationDatasetRequest,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> EvaluationDataset:
+    try:
+        return store.create_evaluation_dataset(user_id, request.name)
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
+    except EvaluationDatasetEmptyError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@app.get(
+    "/v1/users/{user_id}/evaluation-datasets",
+    response_model=EvaluationDatasetCollection,
+)
+def list_evaluation_datasets(
+    user_id: UUID,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> EvaluationDatasetCollection:
+    try:
+        store.get_profile(user_id)
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
+    return EvaluationDatasetCollection(
+        user_id=user_id,
+        datasets=store.list_evaluation_datasets(user_id),
+    )
+
+
+@app.get(
+    "/v1/users/{user_id}/evaluation-datasets/{dataset_id}",
+    response_model=EvaluationDataset,
+)
+def read_evaluation_dataset(
+    user_id: UUID,
+    dataset_id: UUID,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> EvaluationDataset:
+    try:
+        return store.get_evaluation_dataset(user_id, dataset_id)
+    except EvaluationDatasetNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evaluation dataset not found") from exc
+
+
+@app.post(
+    "/v1/users/{user_id}/evaluation-datasets/{dataset_id}/runs",
+    response_model=EvaluationReport,
+    status_code=status.HTTP_201_CREATED,
+)
+def run_evaluation_dataset(
+    user_id: UUID,
+    dataset_id: UUID,
+    service: AnalyseOpportunityService = Depends(get_analysis_service),
+    store: SqlAlchemyStore = Depends(get_store),
+) -> EvaluationReport:
+    try:
+        dataset = store.get_evaluation_dataset(user_id, dataset_id)
+    except EvaluationDatasetNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evaluation dataset not found") from exc
+    report = evaluate_dataset(
+        dataset,
+        service,
+        mode=settings.llm_mode,
+        provider_order=_evaluation_provider_order(),
+        model_names=_evaluation_model_names(),
+    )
+    return store.save_evaluation_run(report)
+
+
+@app.get(
+    "/v1/users/{user_id}/evaluation-datasets/{dataset_id}/runs",
+    response_model=EvaluationRunCollection,
+)
+def list_evaluation_runs(
+    user_id: UUID,
+    dataset_id: UUID,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> EvaluationRunCollection:
+    try:
+        store.get_evaluation_dataset(user_id, dataset_id)
+    except EvaluationDatasetNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evaluation dataset not found") from exc
+    return EvaluationRunCollection(
+        dataset_id=dataset_id,
+        runs=store.list_evaluation_runs(user_id, dataset_id),
+    )
+
+
+@app.get(
+    "/v1/users/{user_id}/evaluation-datasets/{dataset_id}/runs/{run_id}",
+    response_model=EvaluationReport,
+)
+def read_evaluation_run(
+    user_id: UUID,
+    dataset_id: UUID,
+    run_id: UUID,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> EvaluationReport:
+    try:
+        return store.get_evaluation_run(user_id, dataset_id, run_id)
+    except EvaluationRunNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evaluation run not found") from exc

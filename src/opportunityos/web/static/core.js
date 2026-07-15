@@ -4,6 +4,8 @@ const state = {
   analysis: null,
   memory: [],
   audit: [],
+  evaluationDatasets: [],
+  evaluationReport: null,
 };
 
 const viewCopy = {
@@ -18,6 +20,10 @@ const viewCopy = {
   "result-view": [
     "Make an evidence-backed decision",
     "Inspect the fit dimensions, evidence, hypotheses, guardrails and safe next action before pursuing anything.",
+  ],
+  "evaluation-view": [
+    "Measure relevance quality repeatedly",
+    "Freeze your explicit decisions into a stable benchmark and compare the same opportunities across mock, OpenAI and Claude runs.",
   ],
   "memory-view": [
     "Control what the system learns",
@@ -94,6 +100,7 @@ function activateView(viewId) {
   const [title, description] = viewCopy[viewId];
   $("#view-title").textContent = title;
   $("#view-description").textContent = description;
+  if (viewId === "evaluation-view" && state.userId) loadEvaluationDatasets();
   if (viewId === "memory-view" && state.userId) loadMemory();
   if (viewId === "audit-view" && state.userId) loadAudit();
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -179,10 +186,14 @@ function clearProfile() {
   state.analysis = null;
   state.memory = [];
   state.audit = [];
+  state.evaluationDatasets = [];
+  state.evaluationReport = null;
   localStorage.removeItem("opportunityos.userId");
   $("#active-user-label").textContent = "No active profile";
   $("#change-profile-button").classList.add("is-hidden");
   $("#profile-summary").classList.add("is-hidden");
+  $("#evaluation-datasets").innerHTML = "";
+  $("#evaluation-report").classList.add("is-hidden");
   activateView("profile-view");
 }
 
@@ -206,6 +217,7 @@ function renderProfile(profile) {
     </div>
     <div class="feedback-actions">
       <button class="button button-primary" data-go="analyse-view" type="button">Analyse an opportunity</button>
+      <button class="button button-secondary" data-go="evaluation-view" type="button">Benchmark quality</button>
       <button class="button button-secondary" data-go="memory-view" type="button">Review learned memory</button>
     </div>`;
   summary.classList.remove("is-hidden");

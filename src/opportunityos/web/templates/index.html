@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="OpportunityOS personal opportunity intelligence workspace">
+  <title>OpportunityOS</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/components.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="brand-mark">O</div>
+        <div>
+          <div class="brand-name">OpportunityOS</div>
+          <div class="brand-caption">Personal opportunity intelligence</div>
+        </div>
+      </div>
+
+      <nav class="nav-list" aria-label="Workspace navigation">
+        <button class="nav-item is-active" data-view="profile-view">
+          <span class="nav-number">1</span><span>Profile</span>
+        </button>
+        <button class="nav-item" data-view="analyse-view">
+          <span class="nav-number">2</span><span>Analyse</span>
+        </button>
+        <button class="nav-item" data-view="result-view">
+          <span class="nav-number">3</span><span>Decision</span>
+        </button>
+        <button class="nav-item" data-view="evaluation-view">
+          <span class="nav-number">4</span><span>Evaluation</span>
+        </button>
+        <button class="nav-item" data-view="memory-view">
+          <span class="nav-number">5</span><span>Learned memory</span>
+        </button>
+        <button class="nav-item" data-view="audit-view">
+          <span class="nav-number">6</span><span>Audit history</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-line">
+          <span id="health-dot" class="status-dot"></span>
+          <span id="health-label">Checking API</span>
+        </div>
+        <div id="active-user-label" class="active-user-label">No active profile</div>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="workspace-header">
+        <div>
+          <p class="eyebrow">Focused decisions, not an endless feed</p>
+          <h1 id="view-title">Build your personal opportunity model</h1>
+          <p id="view-description" class="view-description">
+            Upload a résumé or reconnect an existing profile. OpportunityOS stores structured memory, not the résumé file.
+          </p>
+        </div>
+        <button id="change-profile-button" class="button button-ghost is-hidden" type="button">Change profile</button>
+      </header>
+
+      <div id="notice" class="notice is-hidden" role="status" aria-live="polite"></div>
+
+      <section id="profile-view" class="view-panel is-active">
+        <div class="split-grid">
+          <article class="card card-primary">
+            <div class="card-heading">
+              <div>
+                <p class="section-kicker">New profile</p>
+                <h2>Start from your résumé</h2>
+              </div>
+              <span class="privacy-badge">Raw file is not stored</span>
+            </div>
+            <form id="onboarding-form" class="form-stack">
+              <label>
+                <span>Name</span>
+                <input name="display_name" required minlength="2" placeholder="Your name">
+              </label>
+              <label>
+                <span>Current direction</span>
+                <input name="headline" placeholder="e.g. Fractional Data and AI leader">
+              </label>
+              <label>
+                <span>Email <small>optional</small></span>
+                <input name="email" type="email" placeholder="you@example.com">
+              </label>
+              <label class="file-field">
+                <span>Résumé</span>
+                <input name="file" type="file" required accept=".txt,.pdf,.docx">
+                <small>TXT, PDF or DOCX. Maximum 5 MB.</small>
+              </label>
+              <div class="two-column-fields">
+                <label>
+                  <span>Preferred engagement <small>optional</small></span>
+                  <select name="preferred_engagement">
+                    <option value="">Open to different models</option>
+                    <option value="fractional">Fractional</option>
+                    <option value="consulting">Consulting project</option>
+                    <option value="contract">Contract</option>
+                    <option value="full_time">Full-time</option>
+                    <option value="advisory">Advisory</option>
+                    <option value="partnership">Partnership</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Preferred work mode <small>optional</small></span>
+                  <select name="work_mode">
+                    <option value="">No strong preference</option>
+                    <option value="remote">Remote</option>
+                    <option value="hybrid">Hybrid</option>
+                    <option value="onsite">On-site</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                <span>Future directions <small>comma-separated, optional</small></span>
+                <input name="aspirations" placeholder="AI product leadership, independent consulting">
+              </label>
+              <label>
+                <span>Problems you want to solve <small>comma-separated, optional</small></span>
+                <input name="problem_areas" placeholder="Retention, forecasting, AI implementation">
+              </label>
+              <label>
+                <span>Hard exclusions <small>comma-separated, optional</small></span>
+                <input name="hard_exclusions" placeholder="Permanent relocation, junior roles">
+              </label>
+              <button class="button button-primary" type="submit">Create personal model</button>
+            </form>
+          </article>
+
+          <article class="card">
+            <div class="card-heading">
+              <div>
+                <p class="section-kicker">Returning user</p>
+                <h2>Load an existing profile</h2>
+              </div>
+            </div>
+            <form id="load-profile-form" class="form-stack compact-form">
+              <label>
+                <span>Profile ID</span>
+                <input id="profile-id-input" name="user_id" required placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+              </label>
+              <button class="button button-secondary" type="submit">Load profile</button>
+            </form>
+            <div class="explanation-box">
+              <strong>Why an ID?</strong>
+              <p>This version has no account system yet. The profile ID is stored only in this browser for quick return access.</p>
+            </div>
+          </article>
+        </div>
+
+        <article id="profile-summary" class="card is-hidden"></article>
+      </section>
+
+      <section id="analyse-view" class="view-panel">
+        <article class="card">
+          <div class="card-heading">
+            <div>
+              <p class="section-kicker">Single-opportunity analysis</p>
+              <h2>Give OpportunityOS something real to evaluate</h2>
+            </div>
+            <span class="selective-badge">One opportunity at a time</span>
+          </div>
+          <form id="analysis-form" class="form-stack">
+            <div class="two-column-fields">
+              <label>
+                <span>Company name <small>optional</small></span>
+                <input name="company_hint" placeholder="Company or organisation">
+              </label>
+              <label>
+                <span>Public URL <small>optional</small></span>
+                <input name="source_url" type="url" placeholder="https://company.com/careers/role">
+              </label>
+            </div>
+            <label>
+              <span>Opportunity, role or company signal</span>
+              <textarea name="raw_text" rows="13" placeholder="Paste a job description, consulting brief, founder post or a company signal. Include the role, location, engagement type and business problem when available."></textarea>
+            </label>
+            <div class="form-action-row">
+              <p>At least a URL or pasted text is required.</p>
+              <button class="button button-primary" type="submit">Analyse relevance</button>
+            </div>
+          </form>
+        </article>
+      </section>
+
+      <section id="result-view" class="view-panel">
+        <div id="analysis-empty" class="empty-state">
+          <div class="empty-icon">↗</div>
+          <h2>No analysis yet</h2>
+          <p>Submit a real opportunity to see its evidence, personalised fit, risks and safe next action.</p>
+          <button class="button button-secondary" data-go="analyse-view" type="button">Analyse an opportunity</button>
+        </div>
+        <div id="analysis-result" class="is-hidden"></div>
+      </section>
+
+      <section id="evaluation-view" class="view-panel">
+        <div class="section-toolbar">
+          <div>
+            <p class="section-kicker">Repeatable quality measurement</p>
+            <h2>Benchmark the same opportunities across model modes</h2>
+            <p>Create an immutable snapshot from your explicit decisions. Later runs use the same profile, opportunity text and labels, so mock, OpenAI and Claude can be compared fairly.</p>
+          </div>
+          <button id="refresh-evaluations-button" class="button button-secondary" type="button">Refresh</button>
+        </div>
+
+        <div class="split-grid">
+          <article class="card card-primary">
+            <div class="card-heading">
+              <div>
+                <p class="section-kicker">Freeze a benchmark</p>
+                <h2>Create dataset from feedback</h2>
+              </div>
+              <span class="privacy-badge">Stored privately in PostgreSQL</span>
+            </div>
+            <form id="evaluation-dataset-form" class="form-stack compact-form">
+              <label>
+                <span>Dataset name</span>
+                <input name="name" required minlength="2" value="Opportunity benchmark v1">
+              </label>
+              <button class="button button-primary" type="submit">Create frozen dataset</button>
+            </form>
+          </article>
+
+          <article class="card">
+            <p class="section-kicker">Readiness rule</p>
+            <h2>What counts as useful</h2>
+            <div class="explanation-box">
+              <strong>Minimum comparison set</strong>
+              <p>Five explicitly labelled opportunities, including at least one pursue and one non-pursue decision. Smaller datasets can still run, but their metrics are directional only.</p>
+            </div>
+            <p class="memory-value">Use Worth pursuing, Save signal, or Not relevant on the Decision screen before freezing a new version.</p>
+          </article>
+        </div>
+
+        <div id="evaluation-datasets" class="evaluation-layout"></div>
+        <div id="evaluation-report" class="is-hidden"></div>
+      </section>
+
+      <section id="memory-view" class="view-panel">
+        <div class="section-toolbar">
+          <div>
+            <p class="section-kicker">User-controlled personalisation</p>
+            <h2>What OpportunityOS believes about you</h2>
+            <p>Confirm accurate inferences, correct them, or reject them. Explicit decisions always outrank implicit behaviour.</p>
+          </div>
+          <div class="toolbar-actions">
+            <label class="toggle-label"><input id="include-inactive-toggle" type="checkbox"> Show inactive</label>
+            <button id="refresh-memory-button" class="button button-secondary" type="button">Refresh</button>
+          </div>
+        </div>
+        <div id="memory-content" class="memory-layout"></div>
+      </section>
+
+      <section id="audit-view" class="view-panel">
+        <div class="section-toolbar">
+          <div>
+            <p class="section-kicker">Transparency</p>
+            <h2>Memory audit history</h2>
+            <p>Every material change records the actor, action, reason and before/after state.</p>
+          </div>
+          <button id="refresh-audit-button" class="button button-secondary" type="button">Refresh</button>
+        </div>
+        <div id="audit-content" class="audit-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="memory-dialog" class="modal">
+    <form id="memory-edit-form" method="dialog">
+      <div class="modal-heading">
+        <div>
+          <p class="section-kicker">Correct memory</p>
+          <h2>Edit the structured value</h2>
+        </div>
+        <button id="close-memory-dialog" class="icon-button" type="button" aria-label="Close">×</button>
+      </div>
+      <input id="memory-edit-id" type="hidden">
+      <label>
+        <span>Key</span>
+        <input id="memory-edit-key" required>
+      </label>
+      <label>
+        <span>Value as JSON</span>
+        <textarea id="memory-edit-value" rows="12" spellcheck="false" required></textarea>
+      </label>
+      <label>
+        <span>Reason <small>optional</small></span>
+        <input id="memory-edit-reason" placeholder="Why are you correcting this?">
+      </label>
+      <div class="modal-actions">
+        <button class="button button-ghost" value="cancel" type="button" id="cancel-memory-edit">Cancel</button>
+        <button class="button button-primary" type="submit">Save correction</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/core.js" defer></script>
+  <script src="/static/analysis.js" defer></script>
+  <script src="/static/memory.js" defer></script>
+  <script src="/static/evaluation.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

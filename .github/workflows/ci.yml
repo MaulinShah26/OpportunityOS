@@ -216,6 +216,82 @@ jobs:
           assert "data science" not in problem_keys
           assert "AI implementation" in problem_keys
           PY
+      - name: Verify PostgreSQL evaluation dataset and run
+        run: |
+          USER_ID="$(python3 -c 'import json; print(json.load(open("onboarding-response.json"))["profile"]["user_id"])')"
+          cat > evaluation-opportunity.json <<'EOF'
+          {
+            "opportunity": {
+              "raw_text": "Company: Acme Consumer\nRole: Fractional Data and AI Lead\nLocation: Remote\nNeed product analytics, retention and AI implementation support."
+            }
+          }
+          EOF
+          curl --fail --silent --show-error \
+            -X POST "http://127.0.0.1:8000/v1/users/${USER_ID}/analyses" \
+            -H 'Content-Type: application/json' \
+            --data @evaluation-opportunity.json \
+            > evaluation-analysis.json
+          ANALYSIS_ID="$(python3 -c 'import json; print(json.load(open("evaluation-analysis.json"))["analysis_id"])')"
+
+          cat > evaluation-feedback.json <<EOF
+          {
+            "feedback": {
+              "analysis_id": "${ANALYSIS_ID}",
+              "action": "pursue",
+              "reasons": ["strong_fit"],
+              "explicit": true
+            }
+          }
+          EOF
+          curl --fail --silent --show-error \
+            -X POST "http://127.0.0.1:8000/v1/users/${USER_ID}/feedback" \
+            -H 'Content-Type: application/json' \
+            --data @evaluation-feedback.json \
+            > evaluation-feedback-response.json
+
+          curl --fail --silent --show-error \
+            -X POST "http://127.0.0.1:8000/v1/users/${USER_ID}/evaluation-datasets" \
+            -H 'Content-Type: application/json' \
+            --data '{"name":"CI PostgreSQL benchmark"}' \
+            > evaluation-dataset.json
+          DATASET_ID="$(python3 -c 'import json; print(json.load(open("evaluation-dataset.json"))["dataset_id"])')"
+
+          curl --fail --silent --show-error \
+            -X POST "http://127.0.0.1:8000/v1/users/${USER_ID}/evaluation-datasets/${DATASET_ID}/runs" \
+            > evaluation-run.json
+          RUN_ID="$(python3 -c 'import json; print(json.load(open("evaluation-run.json"))["run_id"])')"
+
+          curl --fail --silent --show-error \
+            "http://127.0.0.1:8000/v1/users/${USER_ID}/evaluation-datasets/${DATASET_ID}/runs" \
+            > evaluation-runs.json
+          curl --fail --silent --show-error \
+            "http://127.0.0.1:8000/v1/users/${USER_ID}/evaluation-datasets/${DATASET_ID}/runs/${RUN_ID}" \
+            > evaluation-stored-run.json
+          curl --fail --silent --show-error \
+            "http://127.0.0.1:8000/v1/users/${USER_ID}/activity" \
+            > evaluation-activity.json
+
+          python3 - <<'PY'
+          import json
+
+          dataset = json.load(open("evaluation-dataset.json"))
+          assert dataset["frozen"] is True
+          assert len(dataset["cases"]) == 1
+          assert dataset["cases"][0]["expected_decision"] == "pursue"
+
+          report = json.load(open("evaluation-run.json"))
+          assert report["mode"] == "mock"
+          assert report["provider_order"] == "mock"
+          assert report["metrics"]["case_count"] == 1
+          assert report["metrics"]["completed_count"] == 1
+          assert report["metrics"]["failed_count"] == 0
+
+          listed = json.load(open("evaluation-runs.json"))["runs"]
+          assert listed[0]["run_id"] == report["run_id"]
+          stored = json.load(open("evaluation-stored-run.json"))
+          assert stored["metrics"] == report["metrics"]
+          assert json.load(open("evaluation-activity.json"))["analysis_count"] == 1
+          PY
       - name: Show container logs
         if: always()
         run: docker compose --env-file .env.staging -f docker-compose.staging.yml logs --no-color --tail=200

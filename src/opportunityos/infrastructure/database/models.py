@@ -121,3 +121,29 @@ class OutcomeRecord(Timestamped, Base):
     opportunity_id: Mapped[str] = mapped_column(String(36), ForeignKey("opportunities.id"))
     outcome_type: Mapped[str] = mapped_column(String(80))
     outcome_json: Mapped[dict] = mapped_column(JSON)
+
+
+class EvaluationDatasetRecord(Timestamped, Base):
+    __tablename__ = "evaluation_datasets"
+    __table_args__ = (Index("ix_evaluation_datasets_user_created", "user_id", "created_at"),)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"))
+    name: Mapped[str] = mapped_column(String(200))
+    dataset_json: Mapped[dict] = mapped_column(JSON)
+    case_count: Mapped[int] = mapped_column(Integer)
+    decision_labels_json: Mapped[dict] = mapped_column(JSON)
+    frozen: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(40), default="active")
+
+
+class EvaluationRunRecord(Timestamped, Base):
+    __tablename__ = "evaluation_runs"
+    __table_args__ = (
+        Index("ix_evaluation_runs_dataset_created", "dataset_id", "created_at"),
+        Index("ix_evaluation_runs_user_created", "user_id", "created_at"),
+    )
+    dataset_id: Mapped[str] = mapped_column(String(36), ForeignKey("evaluation_datasets.id"))
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"))
+    mode: Mapped[str] = mapped_column(String(40))
+    provider_order: Mapped[str] = mapped_column(String(200))
+    report_json: Mapped[dict] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(40), default="completed")

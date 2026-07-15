@@ -12,14 +12,15 @@ The current vertical slice onboards and persists a personal profile, analyses an
 - an outreach draft only when its declared claims are supported;
 - feedback that updates and persists the personal preference model;
 - inspectable and editable user memory with audit history;
-- an inspectable provider, fallback, and token-budget trace for live runs.
+- an inspectable provider, fallback, and token-budget trace for live runs;
+- frozen, user-labelled evaluation datasets for repeatable model comparison.
 
 ## Architecture principles
 
 - **CrewAI optionally orchestrates** the typed workflow; it does not own business truth.
 - **OpenAI and Anthropic are interchangeable providers** for extraction, business hypotheses, and outreach.
-- **Python owns** constraints, scoring, validation, grounding, guardrails, budgets, fallback, and learning updates.
-- **PostgreSQL stores** structured profile, memory, evidence, runs, feedback, audits, and outcomes.
+- **Python owns** constraints, scoring, validation, grounding, guardrails, budgets, fallback, learning, and evaluation metrics.
+- **PostgreSQL stores** structured profile, memory, evidence, runs, feedback, audits, outcomes, and evaluation snapshots.
 - **Human approval remains mandatory** before any consequential outbound action.
 
 The default development mode is fully deterministic and requires no API keys. Live provider integrations are lazy-loaded.
@@ -96,6 +97,27 @@ The same endpoint supports `update` and `reject`. `DELETE` performs a soft delet
 
 Implicit behaviour cannot overwrite an explicit preference or reactivate a user-rejected memory item. Users can deliberately change those items through the memory API.
 
+## Frozen evaluation datasets
+
+Explicit opportunity feedback can be frozen into an immutable benchmark. The dataset stores the profile snapshot, original opportunity input, and expected decision at creation time. Later learning does not rewrite it.
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/users/<user_id>/evaluation-datasets \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Opportunity benchmark v1"}'
+```
+
+Run the same dataset through the currently deployed model mode:
+
+```bash
+curl -X POST \
+  http://127.0.0.1:8000/v1/users/<user_id>/evaluation-datasets/<dataset_id>/runs
+```
+
+Reports include exact decision accuracy, false-pursue rate, decision distance, evidence and critic rates, optional extraction checks, hard-constraint checks, model calls, tokens, and fallback usage. Evaluation runs are stored separately and do not update memory or create new opportunity records.
+
+A dataset is marked comparison-ready at five or more cases with at least one pursue and one non-pursue label. Smaller samples remain runnable but directional. See [docs/EVALUATION.md](docs/EVALUATION.md).
+
 ## Recommendation and grounding guardrails
 
 Every analysis includes a `critic` object. It validates evidence references, checks that cited evidence materially overlaps the hypothesis, flags overstated confidence, distinguishes speculation from supported claims, and blocks outreach when company-specific claims lack valid evidence lineage.
@@ -109,13 +131,13 @@ A blocked draft is retained inside the critic result for review, but the top-lev
 OpportunityOS serves a lightweight interface directly from FastAPI:
 
 ```text
-/app                 onboarding, analysis, decisions, memory, and audit history
+/app                 onboarding, analysis, decisions, evaluation, memory, and audit history
 /static/base.css     layout and form styles
-/static/components.css result, memory, and audit styles
+/static/components.css result, evaluation, memory, and audit styles
 /static/*.js         same-origin API client and interaction logic
 ```
 
-The decision screen shows the provider used for each live-model role, whether fallback occurred, reported input/output tokens, and the configured call ceiling. No API key or secret is returned to the browser.
+The decision screen shows the provider used for each live-model role, whether fallback occurred, reported input/output tokens, and the configured call ceiling. The Evaluation screen freezes explicit decisions, runs the current model mode, displays case-level mismatches, and downloads the full JSON report. No API key or secret is returned to the browser.
 
 No external frontend packages, CDNs, fonts, analytics, or third-party browser scripts are used.
 
@@ -163,6 +185,7 @@ src/opportunityos/
 ├── api/                 FastAPI routes and dependency wiring
 ├── application/         scoring, learning, grounding, guardrails, and use-case service
 ├── domain/              typed business contracts
+├── evaluation/          frozen datasets, metrics, and comparison reports
 ├── infrastructure/      database, LLM, resume, and research adapters
 └── orchestration/       optional CrewAI Flow runtime
 migrations/              Alembic database migrations
@@ -179,4 +202,4 @@ examples/                sample payloads
 - OCR for scanned resumes;
 - public multi-user authentication.
 
-Those are later stages after the relevance, memory-control, evidence-safety, live-model, and staging-operability foundations are validated.
+Those are later stages after relevance, memory control, evidence safety, live-model behaviour, evaluation quality, and staging operability are validated.

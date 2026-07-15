@@ -1,5 +1,6 @@
 from opportunityos.domain.enums import MemoryCategory
 from opportunityos.domain.taxonomy import canonicalise_preference_key, canonicalise_problem_area
+from opportunityos.infrastructure.database.evaluation_store import EvaluationStoreMixin
 from opportunityos.infrastructure.database.memory_controls import MemoryControlMixin
 from opportunityos.infrastructure.database.memory_errors import (
     MemoryConflictError,
@@ -9,8 +10,13 @@ from opportunityos.infrastructure.database.memory_profile import ProfileMemoryMi
 from opportunityos.infrastructure.database.store import SqlAlchemyStore as BaseSqlAlchemyStore
 
 
-class UserControlledStore(ProfileMemoryMixin, MemoryControlMixin, BaseSqlAlchemyStore):
-    """Adds durable, user-controlled memory to the v0.2 persistence store."""
+class UserControlledStore(
+    EvaluationStoreMixin,
+    ProfileMemoryMixin,
+    MemoryControlMixin,
+    BaseSqlAlchemyStore,
+):
+    """Adds durable, user-controlled memory and evaluation snapshots to the base store."""
 
     def _validate_memory_value(
         self,
