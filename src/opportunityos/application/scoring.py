@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-
-from opportunityos.domain.enums import ConstraintKind, Decision
+from opportunityos.domain.enums import ConstraintKind, Decision, OpportunityType
 from opportunityos.domain.models import (
     FitScore,
     OpportunityProfile,
@@ -183,13 +181,15 @@ def _future_direction_score(profile: PersonalProfile, opportunity: OpportunityPr
 
     aspiration_text = normalise_text(" ".join(aspiration_values))
     engagement_score = 0.0
-    if "consult" in aspiration_text or "fractional" in aspiration_text or "independent" in aspiration_text:
-        if opportunity.opportunity_type in {
-            opportunity.opportunity_type.CONSULTING,
-            opportunity.opportunity_type.FRACTIONAL,
-            opportunity.opportunity_type.ADVISORY,
-        }:
-            engagement_score = 0.90
+    wants_independent_work = (
+        "consult" in aspiration_text or "fractional" in aspiration_text or "independent" in aspiration_text
+    )
+    if wants_independent_work and opportunity.opportunity_type in {
+        OpportunityType.CONSULTING,
+        OpportunityType.FRACTIONAL,
+        OpportunityType.ADVISORY,
+    }:
+        engagement_score = 0.90
 
     score = max(token_score, concept_score, engagement_score)
     return score, "Compared role direction, engagement model, and recognised problem areas with aspirations."
