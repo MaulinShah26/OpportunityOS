@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from opportunityos.domain.enums import MemoryCategory, MemorySource, MemoryStatus
 from opportunityos.domain.models import PersonalProfile
+from opportunityos.domain.taxonomy import canonicalise_profile
 from opportunityos.infrastructure.database.models import (
     MemoryItemRecord,
     PersonalProfileRecord,
@@ -23,7 +24,9 @@ class ProfileMemoryMixin:
         actor: str = "system",
         reason: str | None = None,
     ) -> PersonalProfile:
+        profile = canonicalise_profile(profile)
         profile = self._respect_user_controls(profile, actor)
+        profile = canonicalise_profile(profile)
         self._persist_profile_payload(profile, email=email)
         # User/profile and memory records do not have ORM relationships that
         # communicate insert ordering to SQLAlchemy. Flush the parent rows
