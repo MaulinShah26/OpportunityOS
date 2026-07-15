@@ -76,8 +76,7 @@ def _matching_labels(corpus: str, rules: dict[str, tuple[str, ...]]) -> list[str
     return [label for label, phrases in rules.items() if any(_contains(corpus, phrase) for phrase in phrases)]
 
 
-def _infer_opportunity_type(text: str, explicit_value: str | None) -> OpportunityType:
-    corpus = normalise_text(" ".join(filter(None, [explicit_value, text])))
+def _type_from_corpus(corpus: str) -> OpportunityType:
     if "fractional" in corpus:
         return OpportunityType.FRACTIONAL
     if "advisory" in corpus or "advisor" in corpus:
@@ -91,6 +90,14 @@ def _infer_opportunity_type(text: str, explicit_value: str | None) -> Opportunit
     if "partnership" in corpus or "partner opportunity" in corpus:
         return OpportunityType.PARTNERSHIP
     return OpportunityType.UNKNOWN
+
+
+def _infer_opportunity_type(text: str, explicit_value: str | None) -> OpportunityType:
+    if explicit_value:
+        explicit_type = _type_from_corpus(normalise_text(explicit_value))
+        if explicit_type != OpportunityType.UNKNOWN:
+            return explicit_type
+    return _type_from_corpus(normalise_text(text))
 
 
 def _fallback_title(company: str, opportunity_type: OpportunityType) -> str:
