@@ -1,3 +1,26 @@
+const preferenceLabels = {
+  "recommendation:similar_profiles": "Opportunities similar to ones I marked worth pursuing",
+  "recommendation:similar_opportunities": "Opportunities similar to ones I marked worth pursuing",
+  "location:flexibility": "Location flexibility",
+  "work_style:execution_only": "Execution-only work",
+  "seniority:junior": "Junior-level roles",
+  "engagement:presented_type": "The engagement type presented in the opportunity",
+};
+
+function memoryDisplayLabel(item) {
+  if (item.category !== "preference") return item.key;
+  if (preferenceLabels[item.key]) return preferenceLabels[item.key];
+  const [namespace, rawValue] = item.key.split(":", 2);
+  if (!rawValue) return humanise(item.key);
+  const value = humanise(rawValue);
+  if (namespace === "engagement") return `${value.charAt(0).toUpperCase()}${value.slice(1)} engagements`;
+  if (namespace === "work_mode") return `${value.charAt(0).toUpperCase()}${value.slice(1)} work`;
+  if (namespace === "industry") return `Industry: ${value}`;
+  if (namespace === "location") return `Location: ${value}`;
+  if (namespace === "seniority") return `Seniority: ${value}`;
+  return `${humanise(namespace)} · ${value}`;
+}
+
 function memoryValueSummary(item) {
   const value = item.value || {};
   if (item.category === "capability") return `Proficiency ${Math.round((value.proficiency ?? item.confidence) * 100)}%`;
@@ -28,7 +51,7 @@ function renderMemory() {
         <article class="memory-item">
           <div>
             <div class="memory-title-row">
-              <h4>${escapeHtml(item.key)}</h4>
+              <h4>${escapeHtml(memoryDisplayLabel(item))}</h4>
               <span class="memory-pill ${escapeHtml(item.source)}">${escapeHtml(item.source)}</span>
               <span class="memory-pill ${escapeHtml(item.status)}">${escapeHtml(item.status)}</span>
             </div>
