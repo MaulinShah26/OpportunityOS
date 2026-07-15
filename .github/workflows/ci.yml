@@ -68,7 +68,7 @@ jobs:
         run: exit 1
       - name: Seed pre-canonicalisation PostgreSQL memory
         run: |
-          docker compose --env-file .env.staging -f docker-compose.staging.yml up -d postgres
+          docker compose --env-file .env.staging -f docker-compose.staging.yml up -d --wait postgres
           docker compose --env-file .env.staging -f docker-compose.staging.yml \
             run --rm --no-deps --entrypoint alembic app upgrade 0002_memory_guardrails
           docker compose --env-file .env.staging -f docker-compose.staging.yml \
