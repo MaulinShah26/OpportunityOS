@@ -4,7 +4,7 @@ from collections import defaultdict
 
 from opportunityos.application.service import AnalyseOpportunityService
 from opportunityos.domain.enums import CriticSeverity, Decision
-from opportunityos.domain.models import AnalysisRequest, utcnow
+from opportunityos.domain.models import AnalysisRequest, AnalysisResult, utcnow
 from opportunityos.evaluation.models import (
     EvaluationCase,
     EvaluationCaseResult,
@@ -31,8 +31,8 @@ def _metadata_int(metadata: dict[str, str], key: str) -> int:
         return 0
 
 
-def _extraction_checks(case: EvaluationCase, result: object) -> tuple[int, int]:
-    opportunity = getattr(result, "opportunity")
+def _extraction_checks(case: EvaluationCase, result: AnalysisResult) -> tuple[int, int]:
+    opportunity = result.opportunity
     total = 0
     passed = 0
 
