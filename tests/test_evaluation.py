@@ -5,8 +5,8 @@ from opportunityos.application.factory import build_analysis_service
 from opportunityos.config import Settings
 from opportunityos.domain.enums import Decision
 from opportunityos.domain.models import OpportunityInput
-from opportunityos.evaluation.models import EvaluationCase, EvaluationDataset
-from opportunityos.evaluation.service import evaluate_dataset
+from opportunityos.evaluation.models import EvaluationCase, EvaluationCaseResult, EvaluationDataset
+from opportunityos.evaluation.service import _threshold_simulation, evaluate_dataset
 
 client = TestClient(app)
 
@@ -65,6 +65,75 @@ def test_mock_evaluation_reports_decision_and_constraint_metrics(strong_profile)
     assert report.metrics.false_pursue_rate == 0.0
     assert report.metrics.hard_constraint_accuracy == 1.0
     assert report.metrics.extraction_accuracy == 1.0
+    assert sum(report.metrics.prediction_labels.values()) == 2
+    assert report.metrics.underprediction_rate == 0.0
+    assert report.metrics.overprediction_rate == 0.0
+    assert report.threshold_simulation is None
+    assert report.decision_policy.hold_threshold == 45
+    assert report.decision_policy.pursue_threshold == 72
+    assert report.cases[0].fit_dimensions
+    assert report.cases[0].fit_contributions
+    assert report.cases[0].extraction_confidence is not None
+
+
+def test_threshold_simulation_surfaces_conservative_policy_candidate() -> None:
+    results = [
+        EvaluationCaseResult(
+            case_id="reject",
+            name="Reject case",
+            expected_decision=Decision.REJECT,
+            predicted_decision=Decision.HOLD,
+            fit_score=47,
+            extraction_confidence=0.8,
+            actual_hard_constraint_breach=False,
+        ),
+        EvaluationCaseResult(
+            case_id="hold-one",
+            name="Hold one",
+            expected_decision=Decision.HOLD,
+            predicted_decision=Decision.HOLD,
+            fit_score=46,
+            extraction_confidence=0.8,
+            actual_hard_constraint_breach=False,
+        ),
+        EvaluationCaseResult(
+            case_id="pursue-one",
+            name="Pursue one",
+            expected_decision=Decision.PURSUE,
+            predicted_decision=Decision.HOLD,
+            fit_score=53,
+            extraction_confidence=0.8,
+            actual_hard_constraint_breach=False,
+        ),
+        EvaluationCaseResult(
+            case_id="hold-two",
+            name="Hold two",
+            expected_decision=Decision.HOLD,
+            predicted_decision=Decision.REJECT,
+            fit_score=43,
+            extraction_confidence=0.8,
+            actual_hard_constraint_breach=False,
+        ),
+        EvaluationCaseResult(
+            case_id="pursue-two",
+            name="Pursue two",
+            expected_decision=Decision.PURSUE,
+            predicted_decision=Decision.HOLD,
+            fit_score=50,
+            extraction_confidence=0.8,
+            actual_hard_constraint_breach=False,
+        ),
+    ]
+
+    simulation = _threshold_simulation(results)
+
+    assert simulation is not None
+    assert simulation.hold_threshold == 43
+    assert simulation.pursue_threshold == 50
+    assert simulation.decision_accuracy == 0.8
+    assert simulation.false_pursue_rate == 0.0
+    assert simulation.changed_case_count == 3
+    assert "Exploratory only" in simulation.sample_warning
 
 
 def test_api_freezes_explicit_feedback_and_runs_same_dataset() -> None:
@@ -144,6 +213,13 @@ def test_api_freezes_explicit_feedback_and_runs_same_dataset() -> None:
     assert report["mode"] == "mock"
     assert report["metrics"]["case_count"] == 1
     assert report["metrics"]["completed_count"] == 1
+    assert report["decision_policy"] == {
+        "hold_threshold": 45,
+        "pursue_threshold": 72,
+        "min_extraction_confidence": 0.6,
+    }
+    assert report["threshold_simulation"] is None
+    assert report["cases"][0]["fit_contributions"]
 
     runs = client.get(
         f"/v1/users/{user_id}/evaluation-datasets/{dataset_id}/runs"

@@ -13,6 +13,9 @@ from opportunityos.domain.models import (
 )
 
 TOKEN_RE = re.compile(r"[a-z0-9+#.]+")
+DEFAULT_HOLD_THRESHOLD = 45
+DEFAULT_PURSUE_THRESHOLD = 72
+DEFAULT_MIN_EXTRACTION_CONFIDENCE = 0.60
 
 
 def _tokens(values: Iterable[str]) -> set[str]:
@@ -124,7 +127,31 @@ def calculate_fit(profile: PersonalProfile, opportunity: OpportunityProfile) -> 
     return FitScore(total=total, dimensions=dimensions, hard_constraint_breaches=hard_breaches)
 
 
+def decision_for_thresholds(
+    *,
+    fit_total: int,
+    extraction_confidence: float,
+    has_hard_constraint_breach: bool,
+    hold_threshold: int = DEFAULT_HOLD_THRESHOLD,
+    pursue_threshold: int = DEFAULT_PURSUE_THRESHOLD,
+    min_extraction_confidence: float = DEFAULT_MIN_EXTRACTION_CONFIDENCE,
+) -> Decision:
+    """Apply a transparent decision policy without constructing recommendation copy."""
+    if has_hard_constraint_breach:
+        return Decision.REJECT
+    if fit_total >= pursue_threshold and extraction_confidence >= min_extraction_confidence:
+        return Decision.PURSUE
+    if fit_total >= hold_threshold:
+        return Decision.HOLD
+    return Decision.REJECT
+
+
 def recommend(fit: FitScore, opportunity: OpportunityProfile) -> Recommendation:
+    decision = decision_for_thresholds(
+        fit_total=fit.total,
+        extraction_confidence=opportunity.extraction_confidence,
+        has_hard_constraint_breach=bool(fit.hard_constraint_breaches),
+    )
     if fit.hard_constraint_breaches:
         return Recommendation(
             decision=Decision.REJECT,
@@ -132,14 +159,14 @@ def recommend(fit: FitScore, opportunity: OpportunityProfile) -> Recommendation:
             risks=fit.hard_constraint_breaches,
             next_action="Do not pursue unless the user explicitly changes the relevant constraint.",
         )
-    if fit.total >= 72 and opportunity.extraction_confidence >= 0.6:
+    if decision == Decision.PURSUE:
         return Recommendation(
             decision=Decision.PURSUE,
             rationale="The opportunity has strong personal relevance and sufficient evidence.",
             risks=[],
             next_action="Review the evidence and personalise the draft before contacting anyone.",
         )
-    if fit.total >= 45:
+    if decision == Decision.HOLD:
         return Recommendation(
             decision=Decision.HOLD,
             rationale="The opportunity is plausible, but the fit or evidence is not yet strong enough.",

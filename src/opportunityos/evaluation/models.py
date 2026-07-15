@@ -55,6 +55,23 @@ class CreateEvaluationDatasetRequest(BaseModel):
     name: str = Field(min_length=2, max_length=200)
 
 
+class DecisionPolicySnapshot(BaseModel):
+    hold_threshold: int = Field(default=45, ge=0, le=100)
+    pursue_threshold: int = Field(default=72, ge=0, le=100)
+    min_extraction_confidence: float = Field(default=0.60, ge=0.0, le=1.0)
+
+
+class ThresholdSimulation(BaseModel):
+    hold_threshold: int = Field(ge=0, le=100)
+    pursue_threshold: int = Field(ge=0, le=100)
+    decision_accuracy: float = Field(ge=0.0, le=1.0)
+    mean_decision_distance: float = Field(ge=0.0, le=2.0)
+    false_pursue_rate: float = Field(ge=0.0, le=1.0)
+    false_reject_rate: float = Field(ge=0.0, le=1.0)
+    changed_case_count: int = Field(ge=0)
+    sample_warning: str
+
+
 class EvaluationCaseResult(BaseModel):
     case_id: str
     name: str
@@ -63,6 +80,11 @@ class EvaluationCaseResult(BaseModel):
     correct: bool = False
     decision_distance: int | None = None
     fit_score: int | None = None
+    extraction_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    fit_dimensions: dict[str, float] = Field(default_factory=dict)
+    fit_contributions: dict[str, float] = Field(default_factory=dict)
+    distance_to_hold_threshold: int | None = None
+    distance_to_pursue_threshold: int | None = None
     expected_hard_constraint_breach: bool | None = None
     actual_hard_constraint_breach: bool | None = None
     hard_constraint_correct: bool | None = None
@@ -71,6 +93,7 @@ class EvaluationCaseResult(BaseModel):
     evidence_count: int = 0
     hypothesis_count: int = 0
     critic_passed: bool | None = None
+    critic_issue_codes: list[str] = Field(default_factory=list)
     blocking_issue_count: int = 0
     warning_issue_count: int = 0
     analysis: AnalysisResult | None = None
@@ -86,11 +109,16 @@ class EvaluationMetrics(BaseModel):
     mean_decision_distance: float = Field(ge=0.0, le=2.0)
     false_pursue_rate: float = Field(ge=0.0, le=1.0)
     false_reject_rate: float = Field(ge=0.0, le=1.0)
+    underprediction_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    overprediction_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     evidence_present_rate: float = Field(ge=0.0, le=1.0)
     critic_pass_rate: float = Field(ge=0.0, le=1.0)
     extraction_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
     hard_constraint_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
+    prediction_labels: dict[str, int] = Field(default_factory=dict)
+    confusion_matrix: dict[str, dict[str, int]] = Field(default_factory=dict)
     average_fit_by_expected_decision: dict[str, float] = Field(default_factory=dict)
+    score_ranges_by_expected_decision: dict[str, dict[str, float]] = Field(default_factory=dict)
     total_model_calls: int = Field(ge=0)
     total_reported_input_tokens: int = Field(ge=0)
     total_reported_output_tokens: int = Field(ge=0)
@@ -105,6 +133,8 @@ class EvaluationReport(BaseModel):
     mode: str
     provider_order: str
     model_names: dict[str, str] = Field(default_factory=dict)
+    decision_policy: DecisionPolicySnapshot = Field(default_factory=DecisionPolicySnapshot)
+    threshold_simulation: ThresholdSimulation | None = None
     started_at: datetime = Field(default_factory=utcnow)
     completed_at: datetime = Field(default_factory=utcnow)
     metrics: EvaluationMetrics

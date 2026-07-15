@@ -59,6 +59,36 @@ async function loadEvaluationDatasets() {
   }
 }
 
+function signedScore(value) {
+  const numeric = Number(value || 0);
+  return `${numeric >= 0 ? "+" : ""}${numeric}`;
+}
+
+function fitDiagnosticsHtml(item) {
+  const contributions = Object.entries(item.fit_contributions || {})
+    .sort((left, right) => right[1] - left[1])
+    .map(([name, contribution]) => `
+      <div class="diagnostic-row">
+        <span>${escapeHtml(humanise(name))}</span>
+        <strong>${Number(contribution).toFixed(1)} points</strong>
+      </div>`)
+    .join("");
+  const issueCodes = (item.critic_issue_codes || []).length
+    ? `<p>Critic issues: ${item.critic_issue_codes.map((code) => escapeHtml(humanise(code))).join(", ")}</p>`
+    : `<p>Critic issues: none</p>`;
+  return `
+    <details class="evaluation-diagnostics">
+      <summary>Why this score and decision?</summary>
+      <div class="diagnostic-grid">
+        <div class="diagnostic-row"><span>Extraction confidence</span><strong>${percentage(item.extraction_confidence)}</strong></div>
+        <div class="diagnostic-row"><span>Margin above HOLD threshold</span><strong>${signedScore(item.distance_to_hold_threshold)}</strong></div>
+        <div class="diagnostic-row"><span>Margin above PURSUE threshold</span><strong>${signedScore(item.distance_to_pursue_threshold)}</strong></div>
+        ${contributions}
+      </div>
+      ${issueCodes}
+    </details>`;
+}
+
 function caseResultHtml(item) {
   if (item.error_type) {
     return `
@@ -74,9 +104,49 @@ function caseResultHtml(item) {
         <strong>${escapeHtml(item.name)}</strong>
         <p>Expected ${escapeHtml(item.expected_decision)} · predicted ${escapeHtml(predicted)} · fit ${item.fit_score}</p>
         <p>${item.evidence_count} evidence claims · ${item.hypothesis_count} hypotheses · critic ${item.critic_passed ? "passed" : "flagged"}</p>
+        ${fitDiagnosticsHtml(item)}
       </div>
       <span class="decision-badge decision-${escapeHtml(predicted)}">${item.correct ? "match" : "mismatch"}</span>
     </div>`;
+}
+
+function predictionPatternHtml(metrics) {
+  return `
+    <article class="card evaluation-diagnostic-card">
+      <p class="section-kicker">Decision pattern</p>
+      <h2>Is the system too aggressive or too conservative?</h2>
+      <div class="evaluation-metrics compact-metrics">
+        <div class="stat-box"><strong>${metrics.prediction_labels?.pursue || 0}</strong><span>predicted pursue</span></div>
+        <div class="stat-box"><strong>${metrics.prediction_labels?.hold || 0}</strong><span>predicted hold</span></div>
+        <div class="stat-box"><strong>${metrics.prediction_labels?.reject || 0}</strong><span>predicted reject</span></div>
+        <div class="stat-box"><strong>${percentage(metrics.underprediction_rate)}</strong><span>underprediction</span></div>
+        <div class="stat-box"><strong>${percentage(metrics.overprediction_rate)}</strong><span>overprediction</span></div>
+      </div>
+      <p class="memory-value">Underprediction means the system chose a more conservative action than your frozen label. Overprediction means it chose a more aggressive action.</p>
+    </article>`;
+}
+
+function thresholdSimulationHtml(report) {
+  const policy = report.decision_policy || { hold_threshold: 45, pursue_threshold: 72 };
+  const simulation = report.threshold_simulation;
+  if (!simulation) {
+    return `
+      <article class="card evaluation-diagnostic-card">
+        <p class="section-kicker">Threshold calibration</p>
+        <h2>No better safe threshold candidate yet</h2>
+        <p class="memory-value">Current policy: HOLD at ${policy.hold_threshold}, PURSUE at ${policy.pursue_threshold}. Add more balanced cases before interpreting score thresholds.</p>
+      </article>`;
+  }
+  return `
+    <article class="card evaluation-diagnostic-card">
+      <p class="section-kicker">Exploratory threshold simulation</p>
+      <h2>A candidate policy fits this frozen sample better</h2>
+      <div class="threshold-comparison">
+        <div><span>Current</span><strong>HOLD ${policy.hold_threshold} · PURSUE ${policy.pursue_threshold}</strong><small>${percentage(report.metrics.decision_accuracy)} accuracy</small></div>
+        <div><span>Simulated</span><strong>HOLD ${simulation.hold_threshold} · PURSUE ${simulation.pursue_threshold}</strong><small>${percentage(simulation.decision_accuracy)} accuracy · ${percentage(simulation.false_pursue_rate)} false pursue</small></div>
+      </div>
+      <div class="issue-card warning"><p>${escapeHtml(simulation.sample_warning)} The simulated values are not applied to production decisions.</p></div>
+    </article>`;
 }
 
 function downloadEvaluationReport() {
@@ -116,9 +186,11 @@ function renderEvaluationReport(report) {
       </div>
       ${metrics.case_count < 5 ? `<div class="issue-card warning"><p>This run is directional because the frozen dataset contains fewer than five cases.</p></div>` : ""}
     </article>
+    ${predictionPatternHtml(metrics)}
+    ${thresholdSimulationHtml(report)}
     <article class="card">
       <p class="section-kicker">Case-by-case comparison</p>
-      <h2>Where the model agreed with you</h2>
+      <h2>Where predictions matched or differed from your decisions</h2>
       <div class="evaluation-cases">${report.cases.map(caseResultHtml).join("")}</div>
     </article>`;
   target.classList.remove("is-hidden");
