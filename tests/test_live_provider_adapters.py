@@ -4,7 +4,13 @@ import json
 from types import SimpleNamespace
 
 from opportunityos.domain.enums import EvidenceType, OpportunityType
-from opportunityos.domain.models import EvidenceClaim, OpportunityInput, OpportunityProfile, PersonalProfile, Capability
+from opportunityos.domain.models import (
+    Capability,
+    EvidenceClaim,
+    OpportunityInput,
+    OpportunityProfile,
+    PersonalProfile,
+)
 from opportunityos.infrastructure.llm.anthropic_provider import AnthropicBusinessAnalyst
 from opportunityos.infrastructure.llm.openai_provider import OpenAIOpportunityExtractor
 from opportunityos.infrastructure.llm.runtime import LiveModelRuntime
