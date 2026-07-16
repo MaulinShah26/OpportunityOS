@@ -142,17 +142,17 @@
       <input id="feedback-action" type="hidden">
       <p id="feedback-dialog-help" class="memory-value">Choose at least one reason. Explicit feedback remains visible and reversible in learned memory.</p>
       <div id="feedback-reason-options" class="form-stack">
-        <label data-feedback-actions="pursue save"><span><input type="checkbox" name="reasons" value="strong_fit"> Strong fit with my direction</span></label>
-        <label data-feedback-actions="save"><span><input type="checkbox" name="reasons" value="missing_information"> Interesting, but important information is missing</span></label>
-        <label data-feedback-actions="save reject"><span><input type="checkbox" name="reasons" value="interesting_company_wrong_opportunity"> Interesting company, wrong opportunity</span></label>
-        <label data-feedback-actions="save reject"><span><input type="checkbox" name="reasons" value="wrong_role"> Wrong role or scope</span></label>
-        <label data-feedback-actions="save reject"><span><input type="checkbox" name="reasons" value="wrong_engagement"> Wrong engagement model</span></label>
-        <label data-feedback-actions="save reject"><span><input type="checkbox" name="reasons" value="wrong_company"> Wrong company</span></label>
-        <label data-feedback-actions="save reject"><span><input type="checkbox" name="reasons" value="location_mismatch"> Location or work-mode mismatch</span></label>
-        <label data-feedback-actions="save reject"><span><input type="checkbox" name="reasons" value="compensation_mismatch"> Compensation mismatch</span></label>
-        <label data-feedback-actions="reject"><span><input type="checkbox" name="reasons" value="too_junior"> Too junior</span></label>
-        <label data-feedback-actions="reject"><span><input type="checkbox" name="reasons" value="too_execution_heavy"> Too execution-heavy</span></label>
-        <label data-feedback-actions="reject"><span><input type="checkbox" name="reasons" value="low_ownership"> Too little ownership</span></label>
+        <label class="feedback-reason-option" data-feedback-actions="pursue save"><input type="checkbox" name="reasons" value="strong_fit"><span>Strong fit with my direction</span></label>
+        <label class="feedback-reason-option" data-feedback-actions="save"><input type="checkbox" name="reasons" value="missing_information"><span>Interesting, but important information is missing</span></label>
+        <label class="feedback-reason-option" data-feedback-actions="save reject"><input type="checkbox" name="reasons" value="interesting_company_wrong_opportunity"><span>Interesting company, wrong opportunity</span></label>
+        <label class="feedback-reason-option" data-feedback-actions="save reject"><input type="checkbox" name="reasons" value="wrong_role"><span>Wrong role or scope</span></label>
+        <label class="feedback-reason-option" data-feedback-actions="save reject"><input type="checkbox" name="reasons" value="wrong_engagement"><span>Wrong engagement model</span></label>
+        <label class="feedback-reason-option" data-feedback-actions="save reject"><input type="checkbox" name="reasons" value="wrong_company"><span>Wrong company</span></label>
+        <label class="feedback-reason-option" data-feedback-actions="save reject"><input type="checkbox" name="reasons" value="location_mismatch"><span>Location or work-mode mismatch</span></label>
+        <label class="feedback-reason-option" data-feedback-actions="save reject"><input type="checkbox" name="reasons" value="compensation_mismatch"><span>Compensation mismatch</span></label>
+        <label class="feedback-reason-option" data-feedback-actions="reject"><input type="checkbox" name="reasons" value="too_junior"><span>Too junior</span></label>
+        <label class="feedback-reason-option" data-feedback-actions="reject"><input type="checkbox" name="reasons" value="too_execution_heavy"><span>Too execution-heavy</span></label>
+        <label class="feedback-reason-option" data-feedback-actions="reject"><input type="checkbox" name="reasons" value="low_ownership"><span>Too little ownership</span></label>
       </div>
       <div class="modal-actions"><button id="cancel-feedback" class="button button-ghost" type="button">Cancel</button><button id="submit-feedback" class="button button-primary" type="submit">Save decision</button></div>
     </form>
