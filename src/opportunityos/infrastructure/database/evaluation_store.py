@@ -61,6 +61,10 @@ def _feedback_reasons(payload: dict) -> list[FeedbackReason]:
     ]
 
 
+def _normalise_dataset_name(value: str) -> str:
+    return " ".join(value.casefold().split())
+
+
 def _has_extraction_labels(case: EvaluationCase) -> bool:
     return any(
         [
@@ -76,7 +80,7 @@ def _has_extraction_labels(case: EvaluationCase) -> bool:
     )
 
 
-def _dataset_summary(record: EvaluationDatasetRecord) -> EvaluationDatasetSummary:
+def _dataset_summary(record: EvaluationDatasetRecord, revision: int) -> EvaluationDatasetSummary:
     labels = {str(key): int(value) for key, value in record.decision_labels_json.items()}
     non_pursue = labels.get(Decision.HOLD.value, 0) + labels.get(Decision.REJECT.value, 0)
     ready = record.case_count >= 5 and labels.get(Decision.PURSUE.value, 0) > 0 and non_pursue > 0
@@ -85,12 +89,54 @@ def _dataset_summary(record: EvaluationDatasetRecord) -> EvaluationDatasetSummar
         dataset_id=UUID(record.id),
         user_id=UUID(record.user_id),
         name=record.name,
+        revision=revision,
+        parent_dataset_ids=dataset.parent_dataset_ids,
         case_count=record.case_count,
         decision_labels=labels,
         extraction_label_count=sum(_has_extraction_labels(case) for case in dataset.cases),
         ready_for_comparison=ready,
         created_at=record.created_at,
     )
+
+
+def _case_identity(case: EvaluationCase) -> str:
+    return str(case.source_analysis_id) if case.source_analysis_id is not None else case.case_id
+
+
+def _case_contract(case: EvaluationCase) -> dict:
+    return {
+        "opportunity": case.opportunity.model_dump(mode="json"),
+        "expected_decision": case.expected_decision.value,
+        "expected_company_name": case.expected_company_name,
+        "expected_title": case.expected_title,
+        "expected_opportunity_type": (
+            case.expected_opportunity_type.value if case.expected_opportunity_type else None
+        ),
+        "expected_location": case.expected_location,
+        "expected_remote_allowed": case.expected_remote_allowed,
+        "expected_required_skills": case.expected_required_skills,
+        "expected_problem_areas": case.expected_problem_areas,
+        "expected_responsibilities": case.expected_responsibilities,
+        "expected_hard_constraint_breach": case.expected_hard_constraint_breach,
+    }
+
+
+def _merge_cases(datasets: list[EvaluationDataset]) -> list[EvaluationCase]:
+    merged: list[EvaluationCase] = []
+    by_identity: dict[str, EvaluationCase] = {}
+    for dataset in datasets:
+        for case in dataset.cases:
+            identity = _case_identity(case)
+            existing = by_identity.get(identity)
+            if existing is None:
+                by_identity[identity] = case
+                merged.append(case)
+                continue
+            if _case_contract(existing) != _case_contract(case):
+                raise EvaluationDatasetEmptyError(
+                    f"The frozen case {case.name!r} has conflicting labels across the selected snapshots."
+                )
+    return merged
 
 
 class EvaluationStoreMixin:
@@ -115,15 +161,55 @@ class EvaluationStoreMixin:
             .order_by(BehaviourEventRecord.created_at.desc())
         ).all()
 
-    def _previous_dataset_memberships(self, user_id: UUID) -> dict[str, list[str]]:
-        memberships: dict[str, list[str]] = defaultdict(list)
+    def _active_dataset_records(
+        self,
+        user_id: UUID,
+        *,
+        name: str | None = None,
+    ) -> list[EvaluationDatasetRecord]:
         records = self._session.scalars(
             select(EvaluationDatasetRecord).where(
                 EvaluationDatasetRecord.user_id == str(user_id),
                 EvaluationDatasetRecord.status == "active",
             )
         ).all()
-        for record in records:
+        if name is None:
+            return list(records)
+        normalised = _normalise_dataset_name(name)
+        return [record for record in records if _normalise_dataset_name(record.name) == normalised]
+
+    def _current_profile(self, user_id: UUID) -> PersonalProfile:
+        profile_record = self._session.scalar(
+            select(PersonalProfileRecord).where(PersonalProfileRecord.user_id == str(user_id))
+        )
+        if profile_record is None:
+            from opportunityos.infrastructure.database.store import ProfileNotFoundError
+
+            raise ProfileNotFoundError(str(user_id))
+        return PersonalProfile.model_validate(profile_record.profile_json)
+
+    def _next_revision(self, user_id: UUID, name: str) -> int:
+        return len(self._active_dataset_records(user_id, name=name)) + 1
+
+    def _persist_dataset(self, user_id: UUID, dataset: EvaluationDataset) -> EvaluationDataset:
+        decision_labels = Counter(case.expected_decision.value for case in dataset.cases)
+        record = EvaluationDatasetRecord(
+            id=str(dataset.dataset_id),
+            user_id=str(user_id),
+            name=dataset.name,
+            dataset_json=dataset.model_dump(mode="json"),
+            case_count=len(dataset.cases),
+            decision_labels_json=dict(decision_labels),
+            frozen=True,
+            status="active",
+        )
+        self._session.add(record)
+        self._session.flush()
+        return dataset
+
+    def _previous_dataset_memberships(self, user_id: UUID) -> dict[str, list[str]]:
+        memberships: dict[str, list[str]] = defaultdict(list)
+        for record in self._active_dataset_records(user_id):
             dataset = EvaluationDataset.model_validate(record.dataset_json)
             for case in dataset.cases:
                 if case.source_analysis_id is None:
@@ -132,14 +218,7 @@ class EvaluationStoreMixin:
         return dict(memberships)
 
     def list_evaluation_candidates(self, user_id: UUID) -> list[EvaluationCandidate]:
-        profile_record = self._session.scalar(
-            select(PersonalProfileRecord).where(PersonalProfileRecord.user_id == str(user_id))
-        )
-        if profile_record is None:
-            from opportunityos.infrastructure.database.store import ProfileNotFoundError
-
-            raise ProfileNotFoundError(str(user_id))
-
+        self._current_profile(user_id)
         previous_memberships = self._previous_dataset_memberships(user_id)
         candidates: list[EvaluationCandidate] = []
         seen_analysis_ids: set[str] = set()
@@ -183,117 +262,163 @@ class EvaluationStoreMixin:
             )
         return candidates
 
-    def create_evaluation_dataset(
+    def _new_cases_from_labels(
         self,
         user_id: UUID,
-        name: str,
-        extraction_labels: list[EvaluationCaseLabel] | None = None,
-    ) -> EvaluationDataset:
-        profile_record = self._session.scalar(
-            select(PersonalProfileRecord).where(PersonalProfileRecord.user_id == str(user_id))
-        )
-        if profile_record is None:
-            from opportunityos.infrastructure.database.store import ProfileNotFoundError
-
-            raise ProfileNotFoundError(str(user_id))
-        profile = PersonalProfile.model_validate(profile_record.profile_json)
-        labels = extraction_labels or []
+        labels: list[EvaluationCaseLabel],
+    ) -> list[EvaluationCase]:
+        if not labels:
+            raise EvaluationDatasetEmptyError("Select at least one new reviewed opportunity.")
         label_map = {str(item.source_analysis_id): item.expected for item in labels}
         candidates = self.list_evaluation_candidates(user_id)
-
-        if labels:
-            candidates_by_id = {str(item.source_analysis_id): item for item in candidates}
-            unknown_ids = sorted(set(label_map) - set(candidates_by_id))
-            if unknown_ids:
-                raise EvaluationDatasetEmptyError(
-                    "One or more reviewed analyses are no longer available for evaluation. Refresh the candidates."
-                )
-            reused = [
-                candidates_by_id[analysis_id]
-                for analysis_id in label_map
-                if candidates_by_id[analysis_id].previously_frozen
-            ]
-            if reused:
-                names = ", ".join(item.name for item in reused[:3])
-                raise EvaluationDatasetEmptyError(
-                    f"Extraction-labelled datasets must be out of sample. These cases were already frozen: {names}."
-                )
-            candidates = [candidates_by_id[analysis_id] for analysis_id in label_map]
+        candidates_by_id = {str(item.source_analysis_id): item for item in candidates}
+        unknown_ids = sorted(set(label_map) - set(candidates_by_id))
+        if unknown_ids:
+            raise EvaluationDatasetEmptyError(
+                "One or more reviewed analyses are no longer available for evaluation. Refresh the candidates."
+            )
+        reused = [
+            candidates_by_id[analysis_id]
+            for analysis_id in label_map
+            if candidates_by_id[analysis_id].previously_frozen
+        ]
+        if reused:
+            names = ", ".join(item.name for item in reused[:3])
+            raise EvaluationDatasetEmptyError(
+                f"These cases already belong to a frozen snapshot: {names}. Extend or merge the snapshot instead."
+            )
 
         cases: list[EvaluationCase] = []
-        for candidate in candidates:
-            expected_extraction = label_map.get(str(candidate.source_analysis_id))
+        for analysis_id in label_map:
+            candidate = candidates_by_id[analysis_id]
+            expected_extraction = label_map[analysis_id]
             cases.append(
                 EvaluationCase(
                     case_id=candidate.case_id,
                     name=candidate.name,
                     opportunity=candidate.opportunity,
                     expected_decision=candidate.expected_decision,
-                    expected_company_name=(expected_extraction.company_name if expected_extraction else None),
-                    expected_title=(expected_extraction.title if expected_extraction else None),
-                    expected_opportunity_type=(
-                        expected_extraction.opportunity_type if expected_extraction else None
-                    ),
-                    expected_location=(expected_extraction.location if expected_extraction else None),
-                    expected_remote_allowed=(
-                        expected_extraction.remote_allowed if expected_extraction else None
-                    ),
-                    expected_required_skills=(
-                        expected_extraction.required_skills if expected_extraction else []
-                    ),
-                    expected_problem_areas=(
-                        expected_extraction.problem_areas if expected_extraction else []
-                    ),
-                    expected_responsibilities=(
-                        expected_extraction.responsibilities if expected_extraction else []
-                    ),
+                    expected_company_name=expected_extraction.company_name,
+                    expected_title=expected_extraction.title,
+                    expected_opportunity_type=expected_extraction.opportunity_type,
+                    expected_location=expected_extraction.location,
+                    expected_remote_allowed=expected_extraction.remote_allowed,
+                    expected_required_skills=expected_extraction.required_skills,
+                    expected_problem_areas=expected_extraction.problem_areas,
+                    expected_responsibilities=expected_extraction.responsibilities,
                     source_analysis_id=candidate.source_analysis_id,
                     label_action=candidate.label_action,
                     label_reasons=candidate.label_reasons,
-                    notes=(
-                        "Frozen as a new out-of-sample case after user review of decision and extraction labels."
-                        if expected_extraction
-                        else "Frozen from the latest explicit decision feedback; extraction was not labelled."
-                    ),
+                    notes="Frozen as a new out-of-sample case after user review of decision and extraction labels.",
                 )
             )
+        return cases
+
+    def create_evaluation_dataset(
+        self,
+        user_id: UUID,
+        name: str,
+        extraction_labels: list[EvaluationCaseLabel] | None = None,
+    ) -> EvaluationDataset:
+        profile = self._current_profile(user_id)
+        labels = extraction_labels or []
+        if labels and self._active_dataset_records(user_id, name=name):
+            raise EvaluationDatasetEmptyError(
+                f"A frozen dataset named {name!r} already exists. Use Extend for new cases or Combine for existing snapshots."
+            )
+
+        if labels:
+            cases = self._new_cases_from_labels(user_id, labels)
+        else:
+            candidates = self.list_evaluation_candidates(user_id)
+            cases = [
+                EvaluationCase(
+                    case_id=candidate.case_id,
+                    name=candidate.name,
+                    opportunity=candidate.opportunity,
+                    expected_decision=candidate.expected_decision,
+                    source_analysis_id=candidate.source_analysis_id,
+                    label_action=candidate.label_action,
+                    label_reasons=candidate.label_reasons,
+                    notes="Frozen from the latest explicit decision feedback; extraction was not labelled.",
+                )
+                for candidate in candidates
+            ]
 
         if not cases:
-            message = (
-                "No new explicitly decided analyses are available. Analyse and decide new opportunities before "
-                "creating an out-of-sample extraction-labelled dataset."
-                if labels
-                else "No explicitly labelled analyses are available. Mark opportunities as worth pursuing, "
-                "save signal, or not relevant before creating a dataset."
+            raise EvaluationDatasetEmptyError(
+                "No explicitly decided analyses are available. Analyse and decide opportunities before creating a dataset."
             )
-            raise EvaluationDatasetEmptyError(message)
 
-        dataset = EvaluationDataset(name=name, profile=profile, cases=cases)
-        decision_labels = Counter(case.expected_decision.value for case in cases)
-        record = EvaluationDatasetRecord(
-            id=str(dataset.dataset_id),
-            user_id=str(user_id),
+        dataset = EvaluationDataset(
             name=name,
-            dataset_json=dataset.model_dump(mode="json"),
-            case_count=len(cases),
-            decision_labels_json=dict(decision_labels),
-            frozen=True,
-            status="active",
+            revision=self._next_revision(user_id, name),
+            profile=profile,
+            cases=cases,
         )
-        self._session.add(record)
-        self._session.flush()
-        return dataset
+        return self._persist_dataset(user_id, dataset)
+
+    def extend_evaluation_dataset(
+        self,
+        user_id: UUID,
+        dataset_id: UUID,
+        extraction_labels: list[EvaluationCaseLabel],
+    ) -> EvaluationDataset:
+        base = self.get_evaluation_dataset(user_id, dataset_id)
+        new_cases = self._new_cases_from_labels(user_id, extraction_labels)
+        cases = _merge_cases([base, EvaluationDataset(name=base.name, profile=base.profile, cases=new_cases)])
+        dataset = EvaluationDataset(
+            name=base.name,
+            revision=self._next_revision(user_id, base.name),
+            parent_dataset_ids=[dataset_id],
+            profile=self._current_profile(user_id),
+            cases=cases,
+            source="extended_frozen_dataset",
+        )
+        return self._persist_dataset(user_id, dataset)
+
+    def merge_evaluation_datasets(
+        self,
+        user_id: UUID,
+        source_dataset_ids: list[UUID],
+    ) -> EvaluationDataset:
+        unique_ids = list(dict.fromkeys(source_dataset_ids))
+        if len(unique_ids) < 2:
+            raise EvaluationDatasetEmptyError("Select at least two different frozen snapshots to combine.")
+        datasets = [self.get_evaluation_dataset(user_id, dataset_id) for dataset_id in unique_ids]
+        names = {_normalise_dataset_name(dataset.name) for dataset in datasets}
+        if len(names) != 1:
+            raise EvaluationDatasetEmptyError(
+                "Only snapshots with the same benchmark name can be combined into one revision."
+            )
+        merged_cases = _merge_cases(datasets)
+        if len(merged_cases) <= max(len(dataset.cases) for dataset in datasets):
+            raise EvaluationDatasetEmptyError(
+                "The selected snapshots do not add any distinct cases to one another."
+            )
+        name = datasets[0].name
+        dataset = EvaluationDataset(
+            name=name,
+            revision=self._next_revision(user_id, name),
+            parent_dataset_ids=unique_ids,
+            profile=self._current_profile(user_id),
+            cases=merged_cases,
+            source="merged_frozen_datasets",
+        )
+        return self._persist_dataset(user_id, dataset)
 
     def list_evaluation_datasets(self, user_id: UUID) -> list[EvaluationDatasetSummary]:
-        records = self._session.scalars(
-            select(EvaluationDatasetRecord)
-            .where(
-                EvaluationDatasetRecord.user_id == str(user_id),
-                EvaluationDatasetRecord.status == "active",
-            )
-            .order_by(EvaluationDatasetRecord.created_at.desc())
-        ).all()
-        return [_dataset_summary(record) for record in records]
+        records = sorted(
+            self._active_dataset_records(user_id),
+            key=lambda record: record.created_at,
+        )
+        revisions: dict[str, int] = defaultdict(int)
+        summaries: list[EvaluationDatasetSummary] = []
+        for record in records:
+            key = _normalise_dataset_name(record.name)
+            revisions[key] += 1
+            summaries.append(_dataset_summary(record, revisions[key]))
+        return list(reversed(summaries))
 
     def get_evaluation_dataset(self, user_id: UUID, dataset_id: UUID) -> EvaluationDataset:
         record = self._session.scalar(
