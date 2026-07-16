@@ -8,6 +8,106 @@ function decisionLabelHtml(labels) {
     .join("");
 }
 
+const evaluationOpportunityTypes = [
+  "unknown",
+  "consulting",
+  "fractional",
+  "contract",
+  "full_time",
+  "advisory",
+  "partnership",
+];
+
+function optionsHtml(values, selected) {
+  return values.map((value) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(humanise(value))}</option>`).join("");
+}
+
+function listText(values) {
+  return (values || []).join(", ");
+}
+
+function candidateHtml(candidate) {
+  const remoteValue = candidate.extracted_remote_allowed === null
+    ? "unknown"
+    : String(candidate.extracted_remote_allowed);
+  return `
+    <article class="evaluation-candidate" data-analysis-id="${escapeHtml(candidate.source_analysis_id)}">
+      <div class="candidate-heading">
+        <div>
+          <strong>${escapeHtml(candidate.name)}</strong>
+          <p>Decision label: ${escapeHtml(candidate.expected_decision)}</p>
+        </div>
+        <label class="toggle-label"><input class="candidate-include" type="checkbox"> Include in new dataset</label>
+      </div>
+      <details>
+        <summary>Review and correct extraction</summary>
+        <div class="candidate-grid">
+          <label><span>Company</span><input data-field="company" value="${escapeHtml(candidate.extracted_company_name)}"></label>
+          <label><span>Title</span><input data-field="title" value="${escapeHtml(candidate.extracted_title)}"></label>
+          <label><span>Opportunity type</span><select data-field="opportunity_type">${optionsHtml(evaluationOpportunityTypes, candidate.extracted_opportunity_type)}</select></label>
+          <label><span>Remote status</span><select data-field="remote_allowed">${optionsHtml(["unknown", "true", "false"], remoteValue)}</select></label>
+          <label class="candidate-wide"><span>Location</span><input data-field="location" value="${escapeHtml(candidate.extracted_location || "")}" placeholder="Leave blank when unknown"></label>
+          <label class="candidate-wide"><span>Required skills <small>comma-separated</small></span><textarea data-field="required_skills" rows="3">${escapeHtml(listText(candidate.extracted_required_skills))}</textarea></label>
+          <label class="candidate-wide"><span>Problem areas <small>comma-separated</small></span><textarea data-field="problem_areas" rows="3">${escapeHtml(listText(candidate.extracted_problem_areas))}</textarea></label>
+          <label class="candidate-wide"><span>Responsibilities <small>comma-separated</small></span><textarea data-field="responsibilities" rows="3">${escapeHtml(listText(candidate.extracted_responsibilities))}</textarea></label>
+        </div>
+        <label class="candidate-confirm-label"><input class="candidate-confirm" type="checkbox"> I checked these fields against the supplied opportunity source</label>
+      </details>
+    </article>`;
+}
+
+function renderEvaluationCandidates() {
+  const target = $("#evaluation-candidates");
+  const candidates = state.evaluationCandidates || [];
+  if (!candidates.length) {
+    target.innerHTML = `<div class="blocked-outreach"><strong>No eligible cases</strong><p>Analyse opportunities and record explicit decisions before creating benchmark v3.</p></div>`;
+    return;
+  }
+  target.innerHTML = `
+    <div class="explanation-box">
+      <strong>${candidates.length} explicitly decided opportunities available</strong>
+      <p>Select only new out-of-sample cases for benchmark v3. Expand each selected case, correct the extraction, and confirm it against the source.</p>
+    </div>
+    ${candidates.map(candidateHtml).join("")}`;
+}
+
+async function loadEvaluationCandidates() {
+  const target = $("#evaluation-candidates");
+  if (!state.userId || !target) return;
+  target.innerHTML = `<div class="loading">Loading labelled opportunities…</div>`;
+  try {
+    const response = await api(`/v1/users/${state.userId}/evaluation-candidates`);
+    state.evaluationCandidates = response.candidates || [];
+    renderEvaluationCandidates();
+  } catch (error) {
+    target.innerHTML = `<div class="blocked-outreach"><strong>Cases unavailable</strong><p>${escapeHtml(error.message)}</p></div>`;
+  }
+}
+
+function collectExtractionLabels() {
+  const cards = $$(".evaluation-candidate");
+  const selected = cards.filter((card) => $(".candidate-include", card).checked);
+  if (!selected.length) throw new Error("Select at least one new opportunity for the dataset.");
+  return selected.map((card) => {
+    if (!$(".candidate-confirm", card).checked) {
+      throw new Error("Confirm every selected extraction after checking it against the source.");
+    }
+    const remoteValue = $("[data-field='remote_allowed']", card).value;
+    return {
+      source_analysis_id: card.dataset.analysisId,
+      confirmed: true,
+      expected_company_name: $("[data-field='company']", card).value.trim() || null,
+      expected_title: $("[data-field='title']", card).value.trim() || null,
+      expected_opportunity_type: $("[data-field='opportunity_type']", card).value,
+      expected_remote_allowed: remoteValue === "unknown" ? null : remoteValue === "true",
+      expected_location: $("[data-field='location']", card).value.trim() || null,
+      expected_required_skills: commaSeparated($("[data-field='required_skills']", card).value),
+      expected_problem_areas: commaSeparated($("[data-field='problem_areas']", card).value),
+      expected_responsibilities: commaSeparated($("[data-field='responsibilities']", card).value),
+    };
+  });
+}
+
 function renderEvaluationDatasets() {
   const target = $("#evaluation-datasets");
   if (!state.evaluationDatasets.length) {
@@ -15,7 +115,7 @@ function renderEvaluationDatasets() {
       <article class="card evaluation-empty">
         <p class="section-kicker">No frozen dataset</p>
         <h2>Label real opportunities first</h2>
-        <p class="memory-value">Analyse opportunities and record Worth pursuing, Save signal, or Not relevant. Then return here to freeze those decisions into a benchmark.</p>
+        <p class="memory-value">Analyse opportunities, record decisions, and confirm their extraction before freezing a benchmark.</p>
       </article>`;
     return;
   }
@@ -29,13 +129,11 @@ function renderEvaluationDatasets() {
           <p class="memory-value">Created ${escapeHtml(formatDate(dataset.created_at))} · ${dataset.case_count} cases</p>
         </div>
         <span class="${dataset.ready_for_comparison ? "privacy-badge" : "selective-badge"}">
-          ${dataset.ready_for_comparison ? "Comparison ready" : "Directional sample"}
+          ${dataset.ready_for_comparison ? "Decision ready" : "Directional sample"}
         </span>
       </div>
       <div class="decision-row evaluation-labels">${decisionLabelHtml(dataset.decision_labels)}</div>
-      <p class="memory-value">${dataset.ready_for_comparison
-        ? "This snapshot meets the minimum size and label-balance rule."
-        : "Add more explicit decisions, then create a new frozen version for reliable model comparison."}</p>
+      <p class="memory-value">Extraction labels: ${dataset.extraction_labelled_case_count || 0}/${dataset.case_count} · ${dataset.extraction_ready ? "extraction ready" : "decision-only benchmark"}</p>
       <div class="feedback-actions">
         <button class="button button-primary evaluation-run-button" data-dataset-id="${escapeHtml(dataset.dataset_id)}" type="button">Run current mode</button>
       </div>
@@ -50,13 +148,18 @@ async function loadEvaluationDatasets() {
   if (!state.userId) return;
   const target = $("#evaluation-datasets");
   target.innerHTML = `<div class="loading">Loading frozen datasets…</div>`;
-  try {
-    const response = await api(`/v1/users/${state.userId}/evaluation-datasets`);
-    state.evaluationDatasets = response.datasets || [];
-    renderEvaluationDatasets();
-  } catch (error) {
-    target.innerHTML = `<div class="blocked-outreach"><strong>Evaluation unavailable</strong><p>${escapeHtml(error.message)}</p></div>`;
-  }
+  await Promise.all([
+    (async () => {
+      try {
+        const response = await api(`/v1/users/${state.userId}/evaluation-datasets`);
+        state.evaluationDatasets = response.datasets || [];
+        renderEvaluationDatasets();
+      } catch (error) {
+        target.innerHTML = `<div class="blocked-outreach"><strong>Evaluation unavailable</strong><p>${escapeHtml(error.message)}</p></div>`;
+      }
+    })(),
+    loadEvaluationCandidates(),
+  ]);
 }
 
 function signedScore(value) {
@@ -74,6 +177,17 @@ function decisionGateHtml(item) {
       <p>Score policy said ${escapeHtml(scoreDecision)}; final decision became ${escapeHtml(item.predicted_decision)}.</p>
       <p>${gates.map((code) => escapeHtml(humanise(code))).join(", ")}</p>
     </div>`;
+}
+
+function extractionCaseHtml(item) {
+  if (item.extraction_correct === null || item.extraction_correct === undefined) {
+    return `<p>Extraction label: not supplied for this frozen case.</p>`;
+  }
+  const mismatches = Object.entries(item.extraction_field_results || {})
+    .filter(([, passed]) => !passed)
+    .map(([name]) => humanise(name));
+  if (!mismatches.length) return `<p><strong>Extraction matched all ${item.extraction_checks} labelled fields.</strong></p>`;
+  return `<div class="issue-card warning"><p><strong>Extraction mismatch</strong></p><p>${escapeHtml(mismatches.join(", "))}</p></div>`;
 }
 
 function fitDiagnosticsHtml(item) {
@@ -97,6 +211,7 @@ function fitDiagnosticsHtml(item) {
         <div class="diagnostic-row"><span>Margin above PURSUE threshold</span><strong>${signedScore(item.distance_to_pursue_threshold)}</strong></div>
         ${contributions}
       </div>
+      ${extractionCaseHtml(item)}
       ${decisionGateHtml(item)}
       ${issueCodes}
     </details>`;
@@ -118,13 +233,16 @@ function caseResultHtml(item) {
   const frozenLabel = currentIdentity !== item.name
     ? `<p class="memory-value">Frozen case label: ${escapeHtml(item.name)}</p>`
     : "";
+  const extractionStatus = item.extraction_correct === null || item.extraction_correct === undefined
+    ? "extraction unlabelled"
+    : item.extraction_correct ? "extraction matched" : "extraction mismatched";
   return `
     <div class="evaluation-case ${item.correct ? "is-correct" : "is-mismatch"}">
       <div>
         <strong>${escapeHtml(currentIdentity)}</strong>
         ${frozenLabel}
         <p>Expected ${escapeHtml(item.expected_decision)} · predicted ${escapeHtml(predicted)} · fit ${item.fit_score}${opportunityType ? ` · ${escapeHtml(humanise(opportunityType))}` : ""}</p>
-        <p>${item.evidence_count} evidence claims · ${item.hypothesis_count} hypotheses · critic ${item.critic_passed ? "passed" : "flagged"}</p>
+        <p>${escapeHtml(extractionStatus)} · ${item.evidence_count} evidence claims · critic ${item.critic_passed ? "passed" : "flagged"}</p>
         ${fitDiagnosticsHtml(item)}
       </div>
       <span class="decision-badge decision-${escapeHtml(predicted)}">${item.correct ? "match" : "mismatch"}</span>
@@ -144,7 +262,32 @@ function predictionPatternHtml(metrics) {
         <div class="stat-box"><strong>${percentage(metrics.overprediction_rate)}</strong><span>overprediction</span></div>
         <div class="stat-box"><strong>${metrics.gated_case_count || 0}</strong><span>gated cases</span></div>
       </div>
-      <p class="memory-value">Underprediction means the system chose a more conservative action than your frozen label. Overprediction means it chose a more aggressive action. Gates can cap a high score when identity or work-style evidence is unsafe.</p>
+    </article>`;
+}
+
+function extractionPatternHtml(metrics) {
+  if (metrics.extraction_accuracy === null || metrics.extraction_accuracy === undefined) {
+    return `
+      <article class="card evaluation-diagnostic-card">
+        <p class="section-kicker">Extraction quality</p>
+        <h2>This dataset has no confirmed extraction labels</h2>
+        <p class="memory-value">Decision agreement can still be measured, but it cannot prove that titles, types, skills, or problem areas were extracted correctly.</p>
+      </article>`;
+  }
+  const fields = Object.entries(metrics.extraction_field_accuracy || {})
+    .map(([name, value]) => `<div class="diagnostic-row"><span>${escapeHtml(humanise(name))}</span><strong>${percentage(value)}</strong></div>`)
+    .join("");
+  return `
+    <article class="card evaluation-diagnostic-card">
+      <p class="section-kicker">Extraction quality</p>
+      <h2>Did the system read the opportunities correctly?</h2>
+      <div class="evaluation-metrics compact-metrics">
+        <div class="stat-box"><strong>${percentage(metrics.extraction_accuracy)}</strong><span>field accuracy</span></div>
+        <div class="stat-box"><strong>${percentage(metrics.extraction_case_accuracy)}</strong><span>fully correct cases</span></div>
+        <div class="stat-box"><strong>${metrics.extraction_labelled_case_count}/${metrics.case_count}</strong><span>labelled cases</span></div>
+        <div class="stat-box"><strong>${metrics.extraction_field_count}</strong><span>checked fields</span></div>
+      </div>
+      <div class="diagnostic-grid">${fields}</div>
     </article>`;
 }
 
@@ -200,19 +343,20 @@ function renderEvaluationReport(report) {
       </div>
       <div class="evaluation-metrics">
         <div class="stat-box"><strong>${percentage(metrics.decision_accuracy)}</strong><span>decision accuracy</span></div>
+        <div class="stat-box"><strong>${metrics.extraction_accuracy === null || metrics.extraction_accuracy === undefined ? "—" : percentage(metrics.extraction_accuracy)}</strong><span>extraction accuracy</span></div>
         <div class="stat-box"><strong>${percentage(metrics.false_pursue_rate)}</strong><span>false pursue rate</span></div>
         <div class="stat-box"><strong>${percentage(metrics.critic_pass_rate)}</strong><span>critic pass rate</span></div>
         <div class="stat-box"><strong>${metrics.completed_count}/${metrics.case_count}</strong><span>completed cases</span></div>
         <div class="stat-box"><strong>${metrics.total_model_calls}</strong><span>model calls</span></div>
-        <div class="stat-box"><strong>${metrics.total_reported_input_tokens + metrics.total_reported_output_tokens}</strong><span>reported tokens</span></div>
       </div>
       ${metrics.case_count < 5 ? `<div class="issue-card warning"><p>This run is directional because the frozen dataset contains fewer than five cases.</p></div>` : ""}
     </article>
+    ${extractionPatternHtml(metrics)}
     ${predictionPatternHtml(metrics)}
     ${thresholdSimulationHtml(report)}
     <article class="card">
       <p class="section-kicker">Case-by-case comparison</p>
-      <h2>Where predictions matched or differed from your decisions</h2>
+      <h2>Decision and extraction results</h2>
       <div class="evaluation-cases">${report.cases.map(caseResultHtml).join("")}</div>
     </article>`;
   target.classList.remove("is-hidden");
@@ -227,7 +371,9 @@ async function runEvaluation(datasetId, button) {
       method: "POST",
     });
     renderEvaluationReport(report);
-    showNotice(`Evaluation completed: ${percentage(report.metrics.decision_accuracy)} decision accuracy.`);
+    const extraction = report.metrics.extraction_accuracy;
+    const suffix = extraction === null || extraction === undefined ? "" : ` · ${percentage(extraction)} extraction accuracy`;
+    showNotice(`Evaluation completed: ${percentage(report.metrics.decision_accuracy)} decision accuracy${suffix}.`);
   } catch (error) {
     showNotice(error.message, "error");
   } finally {
@@ -242,14 +388,21 @@ function bindEvaluationEvents() {
     if (!requireProfile()) return;
     const button = $("button[type='submit']", event.currentTarget);
     const name = String(new FormData(event.currentTarget).get("name") || "").trim();
-    setBusy(button, true, "Freezing dataset…");
+    let extractionLabels;
     try {
-      const dataset = await api(`/v1/users/${state.userId}/evaluation-datasets`, {
+      extractionLabels = collectExtractionLabels();
+    } catch (error) {
+      showNotice(error.message, "error");
+      return;
+    }
+    setBusy(button, true, "Freezing labelled dataset…");
+    try {
+      const dataset = await api(`/v1/users/${state.userId}/evaluation-datasets-labelled`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, extraction_labels: extractionLabels }),
       });
-      showNotice(`Frozen dataset created with ${dataset.cases.length} explicitly labelled cases.`);
+      showNotice(`Frozen dataset created with ${dataset.cases.length} extraction-labelled cases.`);
       await loadEvaluationDatasets();
     } catch (error) {
       showNotice(error.message, "error");
