@@ -62,7 +62,12 @@ def _normalise(value: str) -> str:
 
 
 def _corpus(source: OpportunityInput, evidence: Iterable[EvidenceClaim]) -> str:
-    parts = [source.raw_text or "", source.company_hint or "", str(source.source_url or "")]
+    parts = [
+        source.raw_text or "",
+        source.company_hint or "",
+        source.role_hint or "",
+        str(source.source_url or ""),
+    ]
     for item in evidence:
         parts.extend([item.claim, item.supporting_excerpt, str(item.source_url or "")])
     return "\n".join(parts)
@@ -134,6 +139,21 @@ def ground_extracted_opportunity(
             )
         )
         grounded.company_name = "Unknown company"
+        removed += 1
+    considered += 1
+
+    if source.role_hint:
+        grounded.title = source.role_hint.strip()
+    elif not _supported(grounded.title, corpus_tokens, corpus_text):
+        issues.append(
+            GuardrailIssue(
+                code="unsupported_opportunity_title",
+                message="The extracted opportunity title was not supported by the supplied source.",
+                severity=CriticSeverity.WARNING,
+                claim=grounded.title,
+            )
+        )
+        grounded.title = "General opportunity"
         removed += 1
     considered += 1
 
