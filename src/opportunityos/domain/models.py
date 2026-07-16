@@ -259,6 +259,19 @@ class MemoryCollection(BaseModel):
     items: list[MemoryItem]
 
 
+class MemoryMutationRequest(BaseModel):
+    action: MemoryAction
+    key: str | None = Field(default=None, min_length=2, max_length=180)
+    value: dict[str, object] | None = None
+    reason: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_update_payload(self) -> MemoryMutationRequest:
+        if self.action == MemoryAction.UPDATE and self.value is None:
+            raise ValueError("Update action requires value")
+        return self
+
+
 class MemoryAuditEvent(BaseModel):
     id: UUID
     user_id: UUID
@@ -274,10 +287,3 @@ class MemoryAuditEvent(BaseModel):
 class MemoryAuditCollection(BaseModel):
     user_id: UUID
     events: list[MemoryAuditEvent]
-
-
-class MemoryMutationRequest(BaseModel):
-    action: MemoryAction
-    key: str | None = Field(default=None, max_length=180)
-    value: dict[str, object] | None = None
-    reason: str | None = Field(default=None, max_length=500)
