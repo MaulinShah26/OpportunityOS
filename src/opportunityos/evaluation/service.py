@@ -22,11 +22,7 @@ from opportunityos.evaluation.models import (
     ThresholdSimulation,
 )
 
-_DECISION_POSITION = {
-    Decision.REJECT: 0,
-    Decision.HOLD: 1,
-    Decision.PURSUE: 2,
-}
+_DECISION_POSITION = {Decision.REJECT: 0, Decision.HOLD: 1, Decision.PURSUE: 2}
 _DECISIONS = tuple(_DECISION_POSITION)
 
 
@@ -52,38 +48,34 @@ def _metadata_gate_codes(metadata: dict[str, str]) -> list[str]:
     return [item.strip() for item in metadata.get("decision_gates", "").split(",") if item.strip()]
 
 
-def _extraction_checks(case: EvaluationCase, result: AnalysisResult) -> tuple[int, int]:
+def _contains_all(expected: list[str], actual: list[str]) -> bool:
+    actual_values = {_normalise(item) for item in actual}
+    return all(_normalise(item) in actual_values for item in expected)
+
+
+def _extraction_checks(case: EvaluationCase, result: AnalysisResult) -> dict[str, bool]:
     opportunity = result.opportunity
-    total = 0
-    passed = 0
-
+    checks: dict[str, bool] = {}
+    if case.expected_company_name is not None:
+        checks["company_name"] = _normalise(opportunity.company_name) == _normalise(case.expected_company_name)
+    if case.expected_title is not None:
+        checks["title"] = _normalise(opportunity.title) == _normalise(case.expected_title)
     if case.expected_opportunity_type is not None:
-        total += 1
-        passed += opportunity.opportunity_type == case.expected_opportunity_type
+        checks["opportunity_type"] = opportunity.opportunity_type == case.expected_opportunity_type
     if case.expected_remote_allowed is not None:
-        total += 1
-        passed += opportunity.remote_allowed is case.expected_remote_allowed
-
-    actual_skills = {_normalise(item) for item in opportunity.required_skills}
-    for expected in case.expected_required_skills:
-        total += 1
-        passed += _normalise(expected) in actual_skills
-
-    actual_problem_areas = {_normalise(item) for item in opportunity.problem_areas}
-    for expected in case.expected_problem_areas:
-        total += 1
-        passed += _normalise(expected) in actual_problem_areas
-    return total, passed
+        checks["remote_allowed"] = opportunity.remote_allowed is case.expected_remote_allowed
+    if case.expected_required_skills:
+        checks["required_skills"] = _contains_all(case.expected_required_skills, opportunity.required_skills)
+    if case.expected_problem_areas:
+        checks["problem_areas"] = _contains_all(case.expected_problem_areas, opportunity.problem_areas)
+    return checks
 
 
 def _safe_rate(numerator: int | float, denominator: int) -> float:
     return float(numerator) / denominator if denominator else 0.0
 
 
-def _decision_metrics(
-    completed: list[EvaluationCaseResult],
-    predictions: list[Decision],
-) -> tuple[float, float, float, float]:
+def _decision_metrics(completed: list[EvaluationCaseResult], predictions: list[Decision]) -> tuple[float, float, float, float]:
     accuracy = _safe_rate(
         sum(predicted == item.expected_decision for item, predicted in zip(completed, predictions, strict=True)),
         len(completed),
@@ -101,8 +93,7 @@ def _decision_metrics(
         if item.expected_decision != Decision.PURSUE
     ]
     false_pursue_rate = _safe_rate(
-        sum(predicted == Decision.PURSUE for _, predicted in non_pursue),
-        len(non_pursue),
+        sum(predicted == Decision.PURSUE for _, predicted in non_pursue), len(non_pursue)
     )
     expected_pursue = [
         (item, predicted)
@@ -110,8 +101,7 @@ def _decision_metrics(
         if item.expected_decision == Decision.PURSUE
     ]
     false_reject_rate = _safe_rate(
-        sum(predicted == Decision.REJECT for _, predicted in expected_pursue),
-        len(expected_pursue),
+        sum(predicted == Decision.REJECT for _, predicted in expected_pursue), len(expected_pursue)
     )
     return accuracy, mean_distance, false_pursue_rate, false_reject_rate
 
@@ -120,13 +110,11 @@ def _threshold_simulation(completed: list[EvaluationCaseResult]) -> ThresholdSim
     expected_labels = {item.expected_decision for item in completed}
     if len(completed) < 5 or len(expected_labels) < 2:
         return None
-
     current_predictions = [item.predicted_decision for item in completed]
     if any(item is None for item in current_predictions):
         return None
     typed_current = [item for item in current_predictions if item is not None]
     current_accuracy, _, _, _ = _decision_metrics(completed, typed_current)
-
     best: tuple[tuple[float, float, float, int, int], ThresholdSimulation] | None = None
     for hold_threshold in range(20, 71):
         for pursue_threshold in range(hold_threshold + 1, 91):
@@ -144,13 +132,9 @@ def _threshold_simulation(completed: list[EvaluationCaseResult]) -> ThresholdSim
                 )
                 for item in completed
             ]
-            accuracy, mean_distance, false_pursue_rate, false_reject_rate = _decision_metrics(
-                completed,
-                predictions,
-            )
+            accuracy, mean_distance, false_pursue_rate, false_reject_rate = _decision_metrics(completed, predictions)
             changed_case_count = sum(
-                predicted != current
-                for predicted, current in zip(predictions, typed_current, strict=True)
+                predicted != current for predicted, current in zip(predictions, typed_current, strict=True)
             )
             distance_from_default = abs(hold_threshold - DEFAULT_HOLD_THRESHOLD) + abs(
                 pursue_threshold - DEFAULT_PURSUE_THRESHOLD
@@ -169,16 +153,9 @@ def _threshold_simulation(completed: list[EvaluationCaseResult]) -> ThresholdSim
                     else "Simulation only: review case-level effects before changing production policy."
                 ),
             )
-            key = (
-                false_pursue_rate,
-                -accuracy,
-                mean_distance,
-                distance_from_default,
-                changed_case_count,
-            )
+            key = (false_pursue_rate, -accuracy, mean_distance, distance_from_default, changed_case_count)
             if best is None or key < best[0]:
                 best = (key, simulation)
-
     if best is None or best[1].decision_accuracy <= current_accuracy:
         return None
     return best[1]
@@ -194,12 +171,9 @@ def evaluate_dataset(
 ) -> EvaluationReport:
     started_at = utcnow()
     case_results: list[EvaluationCaseResult] = []
-
     for case in dataset.cases:
         try:
-            analysis = service.execute(
-                AnalysisRequest(profile=dataset.profile, opportunity=case.opportunity)
-            )
+            analysis = service.execute(AnalysisRequest(profile=dataset.profile, opportunity=case.opportunity))
             predicted = analysis.recommendation.decision
             actual_hard_breach = bool(analysis.fit_score.hard_constraint_breaches)
             hard_correct = (
@@ -207,25 +181,19 @@ def evaluate_dataset(
                 if case.expected_hard_constraint_breach is not None
                 else None
             )
-            extraction_checks, extraction_passed = _extraction_checks(case, analysis)
+            extraction_results = _extraction_checks(case, analysis)
             fit_dimensions = {item.name: item.score for item in analysis.fit_score.dimensions}
             fit_contributions = {
-                item.name: round(item.score * item.weight * 100, 2)
-                for item in analysis.fit_score.dimensions
+                item.name: round(item.score * item.weight * 100, 2) for item in analysis.fit_score.dimensions
             }
-            score_based_decision = _metadata_decision(
-                analysis.model_metadata,
-                "score_based_decision",
-            )
-            decision_gates = _metadata_gate_codes(analysis.model_metadata)
             case_results.append(
                 EvaluationCaseResult(
                     case_id=case.case_id,
                     name=case.name,
                     expected_decision=case.expected_decision,
                     predicted_decision=predicted,
-                    score_based_decision=score_based_decision,
-                    decision_gates=decision_gates,
+                    score_based_decision=_metadata_decision(analysis.model_metadata, "score_based_decision"),
+                    decision_gates=_metadata_gate_codes(analysis.model_metadata),
                     extracted_company_name=analysis.opportunity.company_name,
                     extracted_title=analysis.opportunity.title,
                     extracted_opportunity_type=analysis.opportunity.opportunity_type,
@@ -235,6 +203,7 @@ def evaluate_dataset(
                     ),
                     fit_score=analysis.fit_score.total,
                     extraction_confidence=analysis.opportunity.extraction_confidence,
+                    extraction_field_results=extraction_results,
                     fit_dimensions=fit_dimensions,
                     fit_contributions=fit_contributions,
                     distance_to_hold_threshold=analysis.fit_score.total - DEFAULT_HOLD_THRESHOLD,
@@ -242,8 +211,8 @@ def evaluate_dataset(
                     expected_hard_constraint_breach=case.expected_hard_constraint_breach,
                     actual_hard_constraint_breach=actual_hard_breach,
                     hard_constraint_correct=hard_correct,
-                    extraction_checks=extraction_checks,
-                    extraction_checks_passed=extraction_passed,
+                    extraction_checks=len(extraction_results),
+                    extraction_checks_passed=sum(extraction_results.values()),
                     evidence_count=len(analysis.opportunity.evidence),
                     hypothesis_count=len(analysis.hypotheses),
                     critic_passed=analysis.critic.passed,
@@ -272,34 +241,30 @@ def evaluate_dataset(
     failed_count = len(case_results) - len(completed)
     predictions = [item.predicted_decision for item in completed if item.predicted_decision is not None]
     decision_accuracy, mean_distance, false_pursue_rate, false_reject_rate = _decision_metrics(
-        completed,
-        predictions,
+        completed, predictions
     )
-
     extraction_total = sum(item.extraction_checks for item in completed)
     extraction_passed = sum(item.extraction_checks_passed for item in completed)
-    labelled_hard_constraints = [
-        item for item in completed if item.hard_constraint_correct is not None
-    ]
-
+    field_totals: Counter[str] = Counter()
+    field_passes: Counter[str] = Counter()
+    for item in completed:
+        for field, passed in item.extraction_field_results.items():
+            field_totals[field] += 1
+            field_passes[field] += int(passed)
+    labelled_hard_constraints = [item for item in completed if item.hard_constraint_correct is not None]
     fit_by_label: dict[str, list[int]] = defaultdict(list)
     for item in completed:
         if item.fit_score is not None:
             fit_by_label[item.expected_decision.value].append(item.fit_score)
-
     prediction_counts = Counter(item.value for item in predictions)
     gate_counts = Counter(code for item in completed for code in item.decision_gates)
     confusion_matrix = {
-        expected.value: {predicted.value: 0 for predicted in _DECISIONS}
-        for expected in _DECISIONS
+        expected.value: {predicted.value: 0 for predicted in _DECISIONS} for expected in _DECISIONS
     }
     for item, predicted in zip(completed, predictions, strict=True):
         confusion_matrix[item.expected_decision.value][predicted.value] += 1
 
-    total_calls = 0
-    total_input_tokens = 0
-    total_output_tokens = 0
-    fallback_case_count = 0
+    total_calls = total_input_tokens = total_output_tokens = fallback_case_count = 0
     for item in completed:
         metadata = item.analysis.model_metadata if item.analysis is not None else {}
         total_calls += _metadata_int(metadata, "model_calls")
@@ -329,17 +294,13 @@ def evaluate_dataset(
             ),
             len(completed),
         ),
-        evidence_present_rate=_safe_rate(
-            sum(item.evidence_count > 0 for item in completed),
-            len(completed),
-        ),
-        critic_pass_rate=_safe_rate(
-            sum(bool(item.critic_passed) for item in completed),
-            len(completed),
-        ),
-        extraction_accuracy=(
-            _safe_rate(extraction_passed, extraction_total) if extraction_total else None
-        ),
+        evidence_present_rate=_safe_rate(sum(item.evidence_count > 0 for item in completed), len(completed)),
+        critic_pass_rate=_safe_rate(sum(bool(item.critic_passed) for item in completed), len(completed)),
+        extraction_accuracy=_safe_rate(extraction_passed, extraction_total) if extraction_total else None,
+        extraction_accuracy_by_field={
+            field: _safe_rate(field_passes[field], total) for field, total in field_totals.items()
+        },
+        extraction_labelled_case_count=sum(bool(item.extraction_field_results) for item in completed),
         hard_constraint_accuracy=(
             _safe_rate(
                 sum(bool(item.hard_constraint_correct) for item in labelled_hard_constraints),
