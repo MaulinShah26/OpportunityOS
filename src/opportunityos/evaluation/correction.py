@@ -29,6 +29,18 @@ def _label_contract(case: EvaluationCase) -> dict:
     }
 
 
+def _corrected_case_name(case: EvaluationCase, company_name: str | None, title: str | None) -> str:
+    company = company_name or case.expected_company_name or case.opportunity.company_hint
+    role = title or case.expected_title or case.opportunity.role_hint
+    if company and role:
+        return f"{company} — {role}"[:240]
+    if company:
+        return f"{company} — opportunity"[:240]
+    if role:
+        return role[:240]
+    return case.name
+
+
 def correct_evaluation_dataset(
     store: object,
     user_id: UUID,
@@ -74,6 +86,7 @@ def correct_evaluation_dataset(
             notes = f"{case.notes} | {correction_note}"[:1000]
         corrected = case.model_copy(
             update={
+                "name": _corrected_case_name(case, expected.company_name, expected.title),
                 "expected_decision": correction.expected_decision,
                 "expected_company_name": expected.company_name,
                 "expected_title": expected.title,
