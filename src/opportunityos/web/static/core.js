@@ -6,6 +6,7 @@ const state = {
   audit: [],
   evaluationDatasets: [],
   evaluationReport: null,
+  evaluationShowHistory: false,
 };
 
 const viewCopy = {
@@ -188,6 +189,7 @@ function clearProfile() {
   state.audit = [];
   state.evaluationDatasets = [];
   state.evaluationReport = null;
+  state.evaluationShowHistory = false;
   localStorage.removeItem("opportunityos.userId");
   $("#active-user-label").textContent = "No active profile";
   $("#change-profile-button").classList.add("is-hidden");
@@ -209,34 +211,11 @@ function renderProfile(profile) {
         <div class="profile-id">${escapeHtml(profile.user_id)}</div>
         <div class="tag-list">${tags}</div>
       </div>
-      <div class="profile-stat-grid">
-        <div class="stat-box"><strong>${profile.capabilities.length}</strong><span>capabilities</span></div>
-        <div class="stat-box"><strong>${profile.preferences.length}</strong><span>preferences</span></div>
-        <div class="stat-box"><strong>${profile.constraints.length}</strong><span>constraints</span></div>
+      <div class="profile-stats">
+        <div><strong>${profile.capabilities.length}</strong><span>capabilities</span></div>
+        <div><strong>${profile.preferences.length}</strong><span>preferences</span></div>
+        <div><strong>${profile.constraints.length}</strong><span>constraints</span></div>
       </div>
-    </div>
-    <div class="feedback-actions">
-      <button class="button button-primary" data-go="analyse-view" type="button">Analyse an opportunity</button>
-      <button class="button button-secondary" data-go="evaluation-view" type="button">Benchmark quality</button>
-      <button class="button button-secondary" data-go="memory-view" type="button">Review learned memory</button>
     </div>`;
   summary.classList.remove("is-hidden");
-  bindGoButtons(summary);
-}
-
-async function loadProfile(userId, silent = false) {
-  try {
-    const response = await api(`/v1/profiles/${encodeURIComponent(userId)}`);
-    setActiveProfile(response.profile);
-    if (!silent) showNotice("Profile loaded.");
-    return true;
-  } catch (error) {
-    if (!silent) showNotice(error.message, "error");
-    return false;
-  }
-}
-
-function renderList(items, renderer, emptyMessage) {
-  if (!items?.length) return `<p class="memory-value">${escapeHtml(emptyMessage)}</p>`;
-  return items.map(renderer).join("");
 }
