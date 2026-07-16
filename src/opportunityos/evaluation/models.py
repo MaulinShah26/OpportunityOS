@@ -43,6 +43,12 @@ class EvaluationCaseLabel(BaseModel):
     expected: ExtractionExpectation
 
 
+class EvaluationCaseCorrection(BaseModel):
+    case_id: str = Field(min_length=2, max_length=120)
+    expected_decision: Decision
+    expected: ExtractionExpectation
+
+
 class EvaluationCase(BaseModel):
     case_id: str = Field(min_length=2, max_length=120)
     name: str = Field(min_length=2, max_length=240)
@@ -69,6 +75,7 @@ class EvaluationDataset(BaseModel):
     schema_version: str = "1.3"
     revision: int = Field(default=1, ge=1)
     parent_dataset_ids: list[UUID] = Field(default_factory=list)
+    revision_reason: str | None = Field(default=None, max_length=1000)
     created_at: datetime = Field(default_factory=utcnow)
     profile: PersonalProfile
     cases: list[EvaluationCase] = Field(min_length=1)
@@ -82,6 +89,7 @@ class EvaluationDatasetSummary(BaseModel):
     name: str
     revision: int = Field(default=1, ge=1)
     parent_dataset_ids: list[UUID] = Field(default_factory=list)
+    revision_reason: str | None = Field(default=None, max_length=1000)
     case_count: int = Field(ge=0)
     decision_labels: dict[str, int] = Field(default_factory=dict)
     extraction_label_count: int = Field(default=0, ge=0)
@@ -105,6 +113,11 @@ class ExtendEvaluationDatasetRequest(BaseModel):
 
 class MergeEvaluationDatasetsRequest(BaseModel):
     source_dataset_ids: list[UUID] = Field(min_length=2)
+
+
+class CorrectEvaluationDatasetRequest(BaseModel):
+    reason: str = Field(min_length=5, max_length=1000)
+    corrections: list[EvaluationCaseCorrection] = Field(min_length=1)
 
 
 class DecisionPolicySnapshot(BaseModel):

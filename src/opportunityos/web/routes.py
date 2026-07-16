@@ -7,7 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse, RedirectResponse
 
 from opportunityos.api.dependencies import get_store
+from opportunityos.evaluation.correction import EvaluationCorrectionError, correct_evaluation_dataset
 from opportunityos.evaluation.models import (
+    CorrectEvaluationDatasetRequest,
     EvaluationDataset,
     EvaluationDatasetCollection,
     ExtendEvaluationDatasetRequest,
@@ -111,4 +113,25 @@ def extend_evaluation_dataset(
     except EvaluationDatasetNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evaluation dataset not found") from exc
     except EvaluationDatasetEmptyError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/v1/users/{user_id}/evaluation-datasets/{dataset_id}/correct",
+    response_model=EvaluationDataset,
+    status_code=status.HTTP_201_CREATED,
+)
+def correct_frozen_evaluation_dataset(
+    user_id: UUID,
+    dataset_id: UUID,
+    request: CorrectEvaluationDatasetRequest,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> EvaluationDataset:
+    try:
+        return correct_evaluation_dataset(store, user_id, dataset_id, request)
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
+    except EvaluationDatasetNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evaluation dataset not found") from exc
+    except EvaluationCorrectionError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
