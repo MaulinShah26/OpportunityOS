@@ -71,6 +71,9 @@ function renderEvaluationDatasets() {
     const snapshotSelector = state.evaluationShowHistory
       ? `<label class="toggle-label dataset-merge-label"><input class="dataset-merge-select" data-dataset-id="${escapeHtml(dataset.dataset_id)}" data-dataset-name="${escapeHtml(dataset.name)}" type="checkbox"> Select snapshot</label>`
       : "";
+    const correctionButton = isLatest
+      ? `<button class="button button-secondary evaluation-correct-button" data-dataset-id="${escapeHtml(dataset.dataset_id)}" data-dataset-name="${escapeHtml(dataset.name)}" data-dataset-revision="${revision}" type="button">Correct benchmark labels</button>`
+      : "";
     return `
       <article class="card evaluation-dataset-card" data-dataset-id="${escapeHtml(dataset.dataset_id)}" data-dataset-name="${escapeHtml(dataset.name)}">
         <div class="card-heading">
@@ -85,6 +88,7 @@ function renderEvaluationDatasets() {
         <div class="feedback-actions">
           <button class="button button-primary evaluation-run-button" data-dataset-id="${escapeHtml(dataset.dataset_id)}" type="button">Run current mode</button>
           <button class="button button-secondary evaluation-extend-button" data-dataset-id="${escapeHtml(dataset.dataset_id)}" data-dataset-name="${escapeHtml(dataset.name)}" type="button">Extend with new cases</button>
+          ${correctionButton}
           ${snapshotSelector}
         </div>
       </article>`;
@@ -95,6 +99,14 @@ function renderEvaluationDatasets() {
   });
   $$(".evaluation-extend-button", target).forEach((button) => {
     button.addEventListener("click", () => startDatasetExtension(button.dataset.datasetId, button.dataset.datasetName, button));
+  });
+  $$(".evaluation-correct-button", target).forEach((button) => {
+    button.addEventListener("click", () => startDatasetCorrection(
+      button.dataset.datasetId,
+      button.dataset.datasetName,
+      button.dataset.datasetRevision,
+      button,
+    ));
   });
   $$(".dataset-merge-select", target).forEach((input) => input.addEventListener("change", updateMergeButton));
   $("#merge-evaluation-datasets-button")?.addEventListener("click", mergeSelectedDatasets);
@@ -206,6 +218,7 @@ async function loadEvaluationCandidates(button) {
 }
 
 async function startDatasetExtension(datasetId, datasetName, button) {
+  closeDatasetCorrection();
   setDatasetBuildMode(datasetId, datasetName);
   $("#evaluation-dataset-form").scrollIntoView({ behavior: "smooth", block: "start" });
   await loadEvaluationCandidates(button);
@@ -241,6 +254,169 @@ function collectExtractionLabels() {
         },
       };
     });
+}
+
+function sourcePanelHtml(opportunity) {
+  const sourceUrl = opportunity.source_url
+    ? `<p><strong>Public URL:</strong> ${escapeHtml(opportunity.source_url)}</p>`
+    : "";
+  const hints = [
+    opportunity.company_hint ? `<p><strong>Company input:</strong> ${escapeHtml(opportunity.company_hint)}</p>` : "",
+    opportunity.role_hint ? `<p><strong>Role input:</strong> ${escapeHtml(opportunity.role_hint)}</p>` : "",
+  ].join("");
+  const sourceText = opportunity.raw_text
+    ? `<pre class="benchmark-source-text">${escapeHtml(opportunity.raw_text)}</pre>`
+    : `<p class="memory-value">No pasted source text was stored for this case.</p>`;
+  return `<div class="benchmark-source-panel"><p class="section-kicker">Original frozen source</p>${hints}${sourceUrl}${sourceText}</div>`;
+}
+
+function correctionEditorHtml(caseItem) {
+  const remote = caseItem.expected_remote_allowed === true
+    ? "true"
+    : caseItem.expected_remote_allowed === false ? "false" : "";
+  const placeholderTitle = isGeneratedTitle(caseItem.expected_title);
+  const warning = placeholderTitle
+    ? `<div class="issue-card warning"><p><strong>The current expected title is a generated placeholder.</strong> Replace it with the title supported by the source, or explicitly confirm that no title exists.</p><label class="toggle-label"><input data-field="accept_placeholder_title" type="checkbox"> The original source genuinely has no explicit title</label></div>`
+    : "";
+  return `
+    <article class="card benchmark-correction-case" data-case-id="${escapeHtml(caseItem.case_id)}">
+      <div class="card-heading">
+        <div>
+          <p class="section-kicker">Correct frozen labels</p>
+          <h3>${escapeHtml(caseItem.name)}</h3>
+        </div>
+        <label class="toggle-label"><input data-field="reviewed" type="checkbox"> Reviewed against source</label>
+      </div>
+      <div class="benchmark-correction-grid">
+        ${sourcePanelHtml(caseItem.opportunity || {})}
+        <div class="benchmark-label-panel">
+          ${warning}
+          <label><span>Expected decision</span><select data-field="expected_decision">${["pursue", "hold", "reject"].map((value) => `<option value="${value}" ${value === caseItem.expected_decision ? "selected" : ""}>${humanise(value)}</option>`).join("")}</select></label>
+          <div class="two-column-fields">
+            <label><span>Expected company</span><input data-field="company_name" value="${escapeHtml(caseItem.expected_company_name || "")}"></label>
+            <label><span>Expected role / title</span><input data-field="title" value="${escapeHtml(caseItem.expected_title || "")}"></label>
+            <label><span>Opportunity type</span><select data-field="opportunity_type">${["", "consulting", "fractional", "contract", "full_time", "advisory", "partnership", "unknown"].map((value) => `<option value="${value}" ${value === (caseItem.expected_opportunity_type || "") ? "selected" : ""}>${value ? humanise(value) : "Not labelled"}</option>`).join("")}</select></label>
+            <label><span>Remote allowed</span><select data-field="remote_allowed"><option value="" ${remote === "" ? "selected" : ""}>Not labelled</option><option value="true" ${remote === "true" ? "selected" : ""}>Yes</option><option value="false" ${remote === "false" ? "selected" : ""}>No</option></select></label>
+          </div>
+          <label><span>Expected location</span><input data-field="location" value="${escapeHtml(caseItem.expected_location || "")}"></label>
+          <label><span>Required skills <small>comma-separated</small></span><input data-field="required_skills" value="${escapeHtml((caseItem.expected_required_skills || []).join(", "))}"></label>
+          <label><span>Problem areas <small>comma-separated</small></span><input data-field="problem_areas" value="${escapeHtml((caseItem.expected_problem_areas || []).join(", "))}"></label>
+          <label><span>Responsibilities or workflows <small>comma-separated</small></span><input data-field="responsibilities" value="${escapeHtml((caseItem.expected_responsibilities || []).join(", "))}"></label>
+        </div>
+      </div>
+    </article>`;
+}
+
+function closeDatasetCorrection() {
+  $("#evaluation-correction-editor")?.remove();
+  state.evaluationCorrectionDatasetId = null;
+}
+
+async function startDatasetCorrection(datasetId, datasetName, revision, button) {
+  setBusy(button, true, "Loading frozen cases…");
+  try {
+    const dataset = await api(`/v1/users/${state.userId}/evaluation-datasets/${datasetId}`);
+    closeDatasetCorrection();
+    $("#evaluation-candidate-editor")?.remove();
+    setDatasetBuildMode();
+    state.evaluationCorrectionDatasetId = datasetId;
+    const editor = document.createElement("section");
+    editor.id = "evaluation-correction-editor";
+    editor.className = "evaluation-layout";
+    editor.innerHTML = `
+      <article class="card">
+        <div class="card-heading">
+          <div>
+            <p class="section-kicker">Immutable label correction</p>
+            <h2>Correct ${escapeHtml(datasetName)} revision ${escapeHtml(revision)}</h2>
+            <p class="memory-value">Review every frozen case against its original source. The existing revision and its benchmark runs remain unchanged; saving creates revision ${(dataset.revision || Number(revision) || 1) + 1}.</p>
+          </div>
+          <button id="cancel-dataset-correction" class="button button-ghost" type="button">Cancel</button>
+        </div>
+        <label><span>Correction reason</span><textarea id="benchmark-correction-reason" rows="3" minlength="5" maxlength="1000" placeholder="Example: Replaced generated placeholder titles and corrected expected opportunity types." required></textarea></label>
+        <div class="issue-card warning"><p>This action corrects human benchmark labels only. It does not rerun extraction, update learned memory, or alter the original opportunities.</p></div>
+      </article>
+      ${dataset.cases.map(correctionEditorHtml).join("")}
+      <article class="card benchmark-correction-submit">
+        <p class="memory-value">All ${dataset.cases.length} cases must be marked reviewed. At least one frozen label must change.</p>
+        <button id="submit-dataset-correction" class="button button-primary" type="button">Create corrected revision</button>
+      </article>`;
+    $("#evaluation-datasets").after(editor);
+    $("#cancel-dataset-correction").addEventListener("click", closeDatasetCorrection);
+    $("#submit-dataset-correction").addEventListener("click", submitDatasetCorrection);
+    editor.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    showNotice(error.message, "error");
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function correctionHasUnresolvedPlaceholderTitle() {
+  return $$(".benchmark-correction-case").some((card) => {
+    const title = $("[data-field='title']", card)?.value || "";
+    const accepted = $("[data-field='accept_placeholder_title']", card)?.checked || false;
+    return isGeneratedTitle(title) && !accepted;
+  });
+}
+
+function collectBenchmarkCorrections() {
+  return $$(".benchmark-correction-case").map((card) => {
+    const value = (field) => $(`[data-field='${field}']`, card)?.value || "";
+    const remote = value("remote_allowed");
+    return {
+      case_id: card.dataset.caseId,
+      expected_decision: value("expected_decision"),
+      expected: {
+        company_name: value("company_name").trim() || null,
+        title: value("title").trim() || null,
+        opportunity_type: value("opportunity_type") || null,
+        location: value("location").trim() || null,
+        remote_allowed: remote === "" ? null : remote === "true",
+        required_skills: splitLabels(value("required_skills")),
+        problem_areas: splitLabels(value("problem_areas")),
+        responsibilities: splitLabels(value("responsibilities")),
+      },
+    };
+  });
+}
+
+async function submitDatasetCorrection() {
+  const button = $("#submit-dataset-correction");
+  const cards = $$(".benchmark-correction-case");
+  const reviewed = cards.filter((card) => $("[data-field='reviewed']", card)?.checked);
+  if (reviewed.length !== cards.length) {
+    showNotice(`Review every case before saving. ${cards.length - reviewed.length} case(s) are still unchecked.`, "error");
+    return;
+  }
+  if (correctionHasUnresolvedPlaceholderTitle()) {
+    showNotice("Replace generated placeholder titles, or explicitly confirm that the original source has no title.", "error");
+    return;
+  }
+  const reason = String($("#benchmark-correction-reason")?.value || "").trim();
+  if (reason.length < 5) {
+    showNotice("Enter a correction reason of at least five characters.", "error");
+    return;
+  }
+  setBusy(button, true, "Creating corrected revision…");
+  try {
+    const dataset = await api(
+      `/v1/users/${state.userId}/evaluation-datasets/${state.evaluationCorrectionDatasetId}/correct`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason, corrections: collectBenchmarkCorrections() }),
+      },
+    );
+    closeDatasetCorrection();
+    state.evaluationShowHistory = false;
+    showNotice(`Created corrected ${dataset.name} revision ${dataset.revision}. The previous revision remains in history.`);
+    await loadEvaluationDatasets();
+  } catch (error) {
+    showNotice(error.message, "error");
+  } finally {
+    setBusy(button, false);
+  }
 }
 
 async function mergeSelectedDatasets() {
@@ -358,6 +534,7 @@ function bindEvaluationEvents() {
   $("#refresh-evaluations-button").addEventListener("click", loadEvaluationDatasets);
   $("#toggle-evaluation-history-button").addEventListener("click", async () => {
     state.evaluationShowHistory = !state.evaluationShowHistory;
+    closeDatasetCorrection();
     await loadEvaluationDatasets();
   });
   const form = $("#evaluation-dataset-form");
