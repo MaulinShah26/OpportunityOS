@@ -8,11 +8,14 @@ from sqlalchemy import select
 from opportunityos.domain.enums import Decision, FeedbackAction, FeedbackReason
 from opportunityos.domain.models import AnalysisResult, OpportunityInput, PersonalProfile
 from opportunityos.evaluation.models import (
+    EvaluationCandidate,
     EvaluationCase,
+    EvaluationCaseLabel,
     EvaluationDataset,
     EvaluationDatasetSummary,
     EvaluationReport,
     EvaluationRunSummary,
+    ExtractionExpectation,
 )
 from opportunityos.infrastructure.database.models import (
     AnalysisRunRecord,
@@ -58,16 +61,31 @@ def _feedback_reasons(payload: dict) -> list[FeedbackReason]:
     ]
 
 
+def _has_extraction_labels(case: EvaluationCase) -> bool:
+    return any(
+        [
+            case.expected_company_name,
+            case.expected_title,
+            case.expected_opportunity_type is not None,
+            case.expected_remote_allowed is not None,
+            case.expected_required_skills,
+            case.expected_problem_areas,
+        ]
+    )
+
+
 def _dataset_summary(record: EvaluationDatasetRecord) -> EvaluationDatasetSummary:
     labels = {str(key): int(value) for key, value in record.decision_labels_json.items()}
     non_pursue = labels.get(Decision.HOLD.value, 0) + labels.get(Decision.REJECT.value, 0)
     ready = record.case_count >= 5 and labels.get(Decision.PURSUE.value, 0) > 0 and non_pursue > 0
+    dataset = EvaluationDataset.model_validate(record.dataset_json)
     return EvaluationDatasetSummary(
         dataset_id=UUID(record.id),
         user_id=UUID(record.user_id),
         name=record.name,
         case_count=record.case_count,
         decision_labels=labels,
+        extraction_label_count=sum(_has_extraction_labels(case) for case in dataset.cases),
         ready_for_comparison=ready,
         created_at=record.created_at,
     )
@@ -76,17 +94,8 @@ def _dataset_summary(record: EvaluationDatasetRecord) -> EvaluationDatasetSummar
 class EvaluationStoreMixin:
     """Persistence methods for immutable, user-labelled evaluation snapshots."""
 
-    def create_evaluation_dataset(self, user_id: UUID, name: str) -> EvaluationDataset:
-        profile_record = self._session.scalar(
-            select(PersonalProfileRecord).where(PersonalProfileRecord.user_id == str(user_id))
-        )
-        if profile_record is None:
-            from opportunityos.infrastructure.database.store import ProfileNotFoundError
-
-            raise ProfileNotFoundError(str(user_id))
-        profile = PersonalProfile.model_validate(profile_record.profile_json)
-
-        rows = self._session.execute(
+    def _evaluation_rows(self, user_id: UUID) -> list[tuple]:
+        return self._session.execute(
             select(BehaviourEventRecord, AnalysisRunRecord, OpportunityRecord)
             .join(
                 AnalysisRunRecord,
@@ -104,9 +113,18 @@ class EvaluationStoreMixin:
             .order_by(BehaviourEventRecord.created_at.desc())
         ).all()
 
-        cases: list[EvaluationCase] = []
+    def list_evaluation_candidates(self, user_id: UUID) -> list[EvaluationCandidate]:
+        profile_record = self._session.scalar(
+            select(PersonalProfileRecord).where(PersonalProfileRecord.user_id == str(user_id))
+        )
+        if profile_record is None:
+            from opportunityos.infrastructure.database.store import ProfileNotFoundError
+
+            raise ProfileNotFoundError(str(user_id))
+
+        candidates: list[EvaluationCandidate] = []
         seen_analysis_ids: set[str] = set()
-        for event, run, opportunity in rows:
+        for event, run, opportunity in self._evaluation_rows(user_id):
             if run.id in seen_analysis_ids:
                 continue
             seen_analysis_ids.add(run.id)
@@ -114,26 +132,80 @@ class EvaluationStoreMixin:
             expected = _FEEDBACK_TO_DECISION.get(action) if action is not None else None
             if expected is None:
                 continue
-
             stored_result = AnalysisResult.model_validate(run.result_json)
-            source = OpportunityInput(
-                source_url=opportunity.source_url,
-                raw_text=opportunity.raw_text,
-                company_hint=stored_result.opportunity.company_name,
-            )
-            cases.append(
-                EvaluationCase(
+            extracted = stored_result.opportunity
+            candidates.append(
+                EvaluationCandidate(
                     case_id=f"analysis-{run.id}",
-                    name=(
-                        f"{stored_result.opportunity.company_name} — "
-                        f"{stored_result.opportunity.title}"
+                    name=f"{extracted.company_name} — {extracted.title}",
+                    opportunity=OpportunityInput(
+                        source_url=opportunity.source_url,
+                        raw_text=opportunity.raw_text,
+                        company_hint=extracted.company_name,
                     ),
-                    opportunity=source,
                     expected_decision=expected,
                     source_analysis_id=UUID(run.id),
                     label_action=action,
                     label_reasons=_feedback_reasons(event.event_json),
-                    notes="Frozen from the latest explicit feedback for this analysis.",
+                    current_extraction=ExtractionExpectation(
+                        company_name=extracted.company_name,
+                        title=extracted.title,
+                        opportunity_type=extracted.opportunity_type,
+                        remote_allowed=extracted.remote_allowed,
+                        required_skills=extracted.required_skills,
+                        problem_areas=extracted.problem_areas,
+                    ),
+                )
+            )
+        return candidates
+
+    def create_evaluation_dataset(
+        self,
+        user_id: UUID,
+        name: str,
+        extraction_labels: list[EvaluationCaseLabel] | None = None,
+    ) -> EvaluationDataset:
+        profile_record = self._session.scalar(
+            select(PersonalProfileRecord).where(PersonalProfileRecord.user_id == str(user_id))
+        )
+        if profile_record is None:
+            from opportunityos.infrastructure.database.store import ProfileNotFoundError
+
+            raise ProfileNotFoundError(str(user_id))
+        profile = PersonalProfile.model_validate(profile_record.profile_json)
+        label_map = {str(item.source_analysis_id): item.expected for item in (extraction_labels or [])}
+
+        cases: list[EvaluationCase] = []
+        for candidate in self.list_evaluation_candidates(user_id):
+            expected_extraction = label_map.get(str(candidate.source_analysis_id))
+            cases.append(
+                EvaluationCase(
+                    case_id=candidate.case_id,
+                    name=candidate.name,
+                    opportunity=candidate.opportunity,
+                    expected_decision=candidate.expected_decision,
+                    expected_company_name=(expected_extraction.company_name if expected_extraction else None),
+                    expected_title=(expected_extraction.title if expected_extraction else None),
+                    expected_opportunity_type=(
+                        expected_extraction.opportunity_type if expected_extraction else None
+                    ),
+                    expected_remote_allowed=(
+                        expected_extraction.remote_allowed if expected_extraction else None
+                    ),
+                    expected_required_skills=(
+                        expected_extraction.required_skills if expected_extraction else []
+                    ),
+                    expected_problem_areas=(
+                        expected_extraction.problem_areas if expected_extraction else []
+                    ),
+                    source_analysis_id=candidate.source_analysis_id,
+                    label_action=candidate.label_action,
+                    label_reasons=candidate.label_reasons,
+                    notes=(
+                        "Frozen after user review of decision and extraction labels."
+                        if expected_extraction
+                        else "Frozen from the latest explicit decision feedback; extraction was not labelled."
+                    ),
                 )
             )
 
