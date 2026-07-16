@@ -32,6 +32,7 @@ from opportunityos.domain.models import (
 )
 from opportunityos.evaluation.models import (
     CreateEvaluationDatasetRequest,
+    EvaluationCandidateCollection,
     EvaluationDataset,
     EvaluationDatasetCollection,
     EvaluationReport,
@@ -57,8 +58,8 @@ from opportunityos.web.routes import router as web_router
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="0.7.0",
-    description="Personal opportunity intelligence with repeatable, user-labelled evaluation",
+    version="0.12.0",
+    description="Personal opportunity intelligence with decision and extraction-labelled evaluation",
 )
 app.mount("/static", StaticFiles(directory=STATIC_ROOT), name="static")
 app.include_router(web_router)
@@ -352,6 +353,21 @@ def read_user_activity(
     return UserActivitySummary(user_id=user_id, analysis_count=store.count_user_analyses(user_id))
 
 
+@app.get(
+    "/v1/users/{user_id}/evaluation-candidates",
+    response_model=EvaluationCandidateCollection,
+)
+def list_evaluation_candidates(
+    user_id: UUID,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> EvaluationCandidateCollection:
+    try:
+        candidates = store.list_evaluation_candidates(user_id)
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
+    return EvaluationCandidateCollection(user_id=user_id, candidates=candidates)
+
+
 @app.post(
     "/v1/users/{user_id}/evaluation-datasets",
     response_model=EvaluationDataset,
@@ -363,7 +379,7 @@ def create_evaluation_dataset(
     store: SqlAlchemyStore = Depends(get_store),
 ) -> EvaluationDataset:
     try:
-        return store.create_evaluation_dataset(user_id, request.name)
+        return store.create_evaluation_dataset(user_id, request.name, request.extraction_labels)
     except ProfileNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
     except EvaluationDatasetEmptyError as exc:
