@@ -110,6 +110,7 @@ def correct_evaluation_dataset(
 
     corrected_dataset = EvaluationDataset(
         name=base.name,
+        schema_version="1.4",
         revision=store._next_revision(user_id, base.name),
         parent_dataset_ids=[dataset_id],
         revision_reason=request.reason,
