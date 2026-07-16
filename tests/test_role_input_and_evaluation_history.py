@@ -113,7 +113,7 @@ def test_role_hint_is_authoritative_and_replayed_exactly() -> None:
     assert case["extraction_field_results"]["title"] is True
 
 
-def test_default_dataset_list_returns_latest_revision_only() -> None:
+def test_latest_endpoint_hides_older_revisions_without_changing_list_api() -> None:
     user_id = _create_user()
     first_analysis = _analyse_and_decide(
         user_id,
@@ -142,11 +142,15 @@ def test_default_dataset_list_returns_latest_revision_only() -> None:
     )
     assert extended.status_code == 201, extended.text
 
-    latest = client.get(f"/v1/users/{user_id}/evaluation-datasets")
+    latest = client.get(f"/v1/users/{user_id}/evaluation-datasets/latest")
     assert latest.status_code == 200, latest.text
     assert len(latest.json()["datasets"]) == 1
     assert latest.json()["datasets"][0]["revision"] == 2
     assert latest.json()["datasets"][0]["case_count"] == 2
+
+    default_list = client.get(f"/v1/users/{user_id}/evaluation-datasets")
+    assert default_list.status_code == 200, default_list.text
+    assert [item["revision"] for item in default_list.json()["datasets"]] == [2, 1]
 
     history = client.get(f"/v1/users/{user_id}/evaluation-datasets/history")
     assert history.status_code == 200, history.text
@@ -166,6 +170,7 @@ def test_web_shell_exposes_role_and_history_controls() -> None:
     assert evaluation_script.status_code == 200
     assert "Show revision history" in shell.text
     assert "generated placeholder title" in evaluation_script.text
+    assert "/evaluation-datasets/latest" in evaluation_script.text
     assert "/evaluation-datasets/history" in evaluation_script.text
 
     assert app_script.status_code == 200
