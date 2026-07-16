@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from uuid import UUID
 
 from sqlalchemy import select
@@ -67,9 +67,11 @@ def _has_extraction_labels(case: EvaluationCase) -> bool:
             case.expected_company_name,
             case.expected_title,
             case.expected_opportunity_type is not None,
+            case.expected_location,
             case.expected_remote_allowed is not None,
             case.expected_required_skills,
             case.expected_problem_areas,
+            case.expected_responsibilities,
         ]
     )
 
@@ -113,6 +115,22 @@ class EvaluationStoreMixin:
             .order_by(BehaviourEventRecord.created_at.desc())
         ).all()
 
+    def _previous_dataset_memberships(self, user_id: UUID) -> dict[str, list[str]]:
+        memberships: dict[str, list[str]] = defaultdict(list)
+        records = self._session.scalars(
+            select(EvaluationDatasetRecord).where(
+                EvaluationDatasetRecord.user_id == str(user_id),
+                EvaluationDatasetRecord.status == "active",
+            )
+        ).all()
+        for record in records:
+            dataset = EvaluationDataset.model_validate(record.dataset_json)
+            for case in dataset.cases:
+                if case.source_analysis_id is None:
+                    continue
+                memberships[str(case.source_analysis_id)].append(record.name)
+        return dict(memberships)
+
     def list_evaluation_candidates(self, user_id: UUID) -> list[EvaluationCandidate]:
         profile_record = self._session.scalar(
             select(PersonalProfileRecord).where(PersonalProfileRecord.user_id == str(user_id))
@@ -122,6 +140,7 @@ class EvaluationStoreMixin:
 
             raise ProfileNotFoundError(str(user_id))
 
+        previous_memberships = self._previous_dataset_memberships(user_id)
         candidates: list[EvaluationCandidate] = []
         seen_analysis_ids: set[str] = set()
         for event, run, opportunity in self._evaluation_rows(user_id):
@@ -134,6 +153,7 @@ class EvaluationStoreMixin:
                 continue
             stored_result = AnalysisResult.model_validate(run.result_json)
             extracted = stored_result.opportunity
+            previous_dataset_names = previous_memberships.get(run.id, [])
             candidates.append(
                 EvaluationCandidate(
                     case_id=f"analysis-{run.id}",
@@ -151,10 +171,14 @@ class EvaluationStoreMixin:
                         company_name=extracted.company_name,
                         title=extracted.title,
                         opportunity_type=extracted.opportunity_type,
+                        location=extracted.location,
                         remote_allowed=extracted.remote_allowed,
                         required_skills=extracted.required_skills,
                         problem_areas=extracted.problem_areas,
+                        responsibilities=extracted.responsibilities,
                     ),
+                    previously_frozen=bool(previous_dataset_names),
+                    previous_dataset_names=previous_dataset_names,
                 )
             )
         return candidates
@@ -173,10 +197,31 @@ class EvaluationStoreMixin:
 
             raise ProfileNotFoundError(str(user_id))
         profile = PersonalProfile.model_validate(profile_record.profile_json)
-        label_map = {str(item.source_analysis_id): item.expected for item in (extraction_labels or [])}
+        labels = extraction_labels or []
+        label_map = {str(item.source_analysis_id): item.expected for item in labels}
+        candidates = self.list_evaluation_candidates(user_id)
+
+        if labels:
+            candidates_by_id = {str(item.source_analysis_id): item for item in candidates}
+            unknown_ids = sorted(set(label_map) - set(candidates_by_id))
+            if unknown_ids:
+                raise EvaluationDatasetEmptyError(
+                    "One or more reviewed analyses are no longer available for evaluation. Refresh the candidates."
+                )
+            reused = [
+                candidates_by_id[analysis_id]
+                for analysis_id in label_map
+                if candidates_by_id[analysis_id].previously_frozen
+            ]
+            if reused:
+                names = ", ".join(item.name for item in reused[:3])
+                raise EvaluationDatasetEmptyError(
+                    f"Extraction-labelled datasets must be out of sample. These cases were already frozen: {names}."
+                )
+            candidates = [candidates_by_id[analysis_id] for analysis_id in label_map]
 
         cases: list[EvaluationCase] = []
-        for candidate in self.list_evaluation_candidates(user_id):
+        for candidate in candidates:
             expected_extraction = label_map.get(str(candidate.source_analysis_id))
             cases.append(
                 EvaluationCase(
@@ -189,6 +234,7 @@ class EvaluationStoreMixin:
                     expected_opportunity_type=(
                         expected_extraction.opportunity_type if expected_extraction else None
                     ),
+                    expected_location=(expected_extraction.location if expected_extraction else None),
                     expected_remote_allowed=(
                         expected_extraction.remote_allowed if expected_extraction else None
                     ),
@@ -198,11 +244,14 @@ class EvaluationStoreMixin:
                     expected_problem_areas=(
                         expected_extraction.problem_areas if expected_extraction else []
                     ),
+                    expected_responsibilities=(
+                        expected_extraction.responsibilities if expected_extraction else []
+                    ),
                     source_analysis_id=candidate.source_analysis_id,
                     label_action=candidate.label_action,
                     label_reasons=candidate.label_reasons,
                     notes=(
-                        "Frozen after user review of decision and extraction labels."
+                        "Frozen as a new out-of-sample case after user review of decision and extraction labels."
                         if expected_extraction
                         else "Frozen from the latest explicit decision feedback; extraction was not labelled."
                     ),
@@ -210,20 +259,24 @@ class EvaluationStoreMixin:
             )
 
         if not cases:
-            raise EvaluationDatasetEmptyError(
-                "No explicitly labelled analyses are available. Mark opportunities as worth pursuing, "
+            message = (
+                "No new explicitly decided analyses are available. Analyse and decide new opportunities before "
+                "creating an out-of-sample extraction-labelled dataset."
+                if labels
+                else "No explicitly labelled analyses are available. Mark opportunities as worth pursuing, "
                 "save signal, or not relevant before creating a dataset."
             )
+            raise EvaluationDatasetEmptyError(message)
 
         dataset = EvaluationDataset(name=name, profile=profile, cases=cases)
-        labels = Counter(case.expected_decision.value for case in cases)
+        decision_labels = Counter(case.expected_decision.value for case in cases)
         record = EvaluationDatasetRecord(
             id=str(dataset.dataset_id),
             user_id=str(user_id),
             name=name,
             dataset_json=dataset.model_dump(mode="json"),
             case_count=len(cases),
-            decision_labels_json=dict(labels),
+            decision_labels_json=dict(decision_labels),
             frozen=True,
             status="active",
         )
