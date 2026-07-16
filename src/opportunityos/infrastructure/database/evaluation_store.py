@@ -170,6 +170,7 @@ class EvaluationStoreMixin:
 
             raise ProfileNotFoundError(str(user_id))
         profile = PersonalProfile.model_validate(profile_record.profile_json)
+        labels_supplied = extraction_labels is not None
         label_by_analysis = {
             label.source_analysis_id: label for label in (extraction_labels or []) if label.confirmed
         }
@@ -177,6 +178,8 @@ class EvaluationStoreMixin:
         cases: list[EvaluationCase] = []
         for candidate in self._evaluation_candidates(user_id):
             label = label_by_analysis.get(candidate.source_analysis_id)
+            if labels_supplied and label is None:
+                continue
             cases.append(
                 EvaluationCase(
                     case_id=f"analysis-{candidate.source_analysis_id}",
@@ -205,7 +208,9 @@ class EvaluationStoreMixin:
 
         if not cases:
             raise EvaluationDatasetEmptyError(
-                "No explicitly labelled analyses are available. Mark opportunities as worth pursuing, "
+                "No selected, confirmed analyses are available for this dataset."
+                if labels_supplied
+                else "No explicitly labelled analyses are available. Mark opportunities as worth pursuing, "
                 "save signal, or not relevant before creating a dataset."
             )
 
