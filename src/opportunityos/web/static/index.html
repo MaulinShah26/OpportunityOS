@@ -118,8 +118,15 @@
       </section>
 
       <section id="evaluation-view" class="view-panel">
-        <div class="section-toolbar"><div><p class="section-kicker">Repeatable quality measurement</p><h2>Benchmark the system against your decisions</h2><p>Freeze explicitly labelled opportunities so mock, OpenAI, and Claude can be compared on the same profile and inputs.</p></div><button id="refresh-evaluations-button" class="button button-secondary" type="button">Refresh</button></div>
-        <article class="card"><div class="card-heading"><div><p class="section-kicker">New benchmark version</p><h2>Create a frozen evaluation dataset</h2><p class="memory-value">The latest explicit feedback for each analysed opportunity becomes its expected decision. Existing datasets never change.</p></div><span class="privacy-badge">Private PostgreSQL snapshot</span></div><form id="evaluation-dataset-form" class="form-stack compact-form"><label><span>Dataset name</span><input name="name" required minlength="2" maxlength="200" placeholder="Opportunity benchmark v1"></label><button class="button button-primary" type="submit">Create frozen dataset</button></form></article>
+        <div class="section-toolbar"><div><p class="section-kicker">Repeatable quality measurement</p><h2>Benchmark decisions and extraction separately</h2><p>Confirm what each opportunity actually says before freezing it, then compare both extraction quality and final decisions across runtimes.</p></div><button id="refresh-evaluations-button" class="button button-secondary" type="button">Refresh</button></div>
+        <article class="card">
+          <div class="card-heading"><div><p class="section-kicker">New benchmark version</p><h2>Create an extraction-labelled dataset</h2><p class="memory-value">Review the current extraction for every explicitly decided opportunity. Correct any field, confirm the label, and freeze a new immutable version.</p></div><span class="privacy-badge">Private PostgreSQL snapshot</span></div>
+          <form id="evaluation-dataset-form" class="form-stack">
+            <label><span>Dataset name</span><input name="name" required minlength="2" maxlength="200" placeholder="Opportunity benchmark v3"></label>
+            <div id="evaluation-candidates" class="evaluation-candidates"><div class="loading">Loading labelled opportunities…</div></div>
+            <div class="form-action-row"><p>For a trustworthy extraction score, confirm every case after checking the source.</p><button class="button button-primary" type="submit">Freeze labelled dataset</button></div>
+          </form>
+        </article>
         <div id="evaluation-datasets" class="evaluation-layout"></div>
         <div id="evaluation-report" class="evaluation-layout is-hidden"></div>
       </section>
