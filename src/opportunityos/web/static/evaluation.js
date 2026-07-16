@@ -107,7 +107,7 @@ async function loadEvaluationDatasets() {
   try {
     const path = state.evaluationShowHistory
       ? `/v1/users/${state.userId}/evaluation-datasets/history`
-      : `/v1/users/${state.userId}/evaluation-datasets`;
+      : `/v1/users/${state.userId}/evaluation-datasets/latest`;
     const response = await api(path);
     state.evaluationDatasets = response.datasets || [];
     renderEvaluationDatasets();
