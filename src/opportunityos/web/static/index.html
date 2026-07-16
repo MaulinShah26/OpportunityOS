@@ -104,9 +104,11 @@
           <form id="analysis-form" class="form-stack">
             <div class="two-column-fields">
               <label><span>Company name <small>optional</small></span><input name="company_hint" placeholder="Company or organisation"></label>
-              <label><span>Public URL <small>optional</small></span><input name="source_url" type="url" placeholder="https://company.com/careers/role"></label>
+              <label><span>Role / opportunity title <small>optional</small></span><input name="role_hint" placeholder="Senior Product Manager, Fractional CTO, advisory project"></label>
             </div>
-            <label><span>Opportunity, role or company signal</span><textarea name="raw_text" rows="13" placeholder="Paste a job description, consulting brief, founder post or a company signal. Include the role, location, engagement type and business problem when available."></textarea></label>
+            <label><span>Public URL <small>optional</small></span><input name="source_url" type="url" placeholder="https://company.com/careers/role"></label>
+            <div class="explanation-box"><strong>Known role titles are authoritative</strong><p>When you provide the role or opportunity title here, OpportunityOS uses it directly instead of trying to reconstruct it from the pasted description.</p></div>
+            <label><span>Opportunity, role or company signal</span><textarea name="raw_text" rows="13" placeholder="Paste a job description, consulting brief, founder post or a company signal. Include the location, engagement type and business problem when available."></textarea></label>
             <div class="form-action-row"><p>At least a URL or pasted text is required.</p><button class="button button-primary" type="submit">Analyse relevance</button></div>
           </form>
         </article>
@@ -118,7 +120,7 @@
       </section>
 
       <section id="evaluation-view" class="view-panel">
-        <div class="section-toolbar"><div><p class="section-kicker">Repeatable quality measurement</p><h2>Benchmark the system against your decisions</h2><p>Freeze explicitly labelled opportunities so mock, OpenAI, and Claude can be compared on the same profile and inputs.</p></div><button id="refresh-evaluations-button" class="button button-secondary" type="button">Refresh</button></div>
+        <div class="section-toolbar"><div><p class="section-kicker">Repeatable quality measurement</p><h2>Benchmark the system against your decisions</h2><p>Freeze explicitly labelled opportunities so mock, OpenAI, and Claude can be compared on the same profile and inputs.</p></div><div class="toolbar-actions"><button id="toggle-evaluation-history-button" class="button button-ghost" type="button">Show revision history</button><button id="refresh-evaluations-button" class="button button-secondary" type="button">Refresh</button></div></div>
         <article class="card"><div class="card-heading"><div><p class="section-kicker">New benchmark version</p><h2>Create a frozen evaluation dataset</h2><p class="memory-value">The latest explicit feedback for each analysed opportunity becomes its expected decision. Existing datasets never change.</p></div><span class="privacy-badge">Private PostgreSQL snapshot</span></div><form id="evaluation-dataset-form" class="form-stack compact-form"><label><span>Dataset name</span><input name="name" required minlength="2" maxlength="200" placeholder="Opportunity benchmark v1"></label><button class="button button-primary" type="submit">Create frozen dataset</button></form></article>
         <div id="evaluation-datasets" class="evaluation-layout"></div>
         <div id="evaluation-report" class="evaluation-layout is-hidden"></div>

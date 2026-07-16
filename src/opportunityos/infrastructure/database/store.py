@@ -134,13 +134,15 @@ class SqlAlchemyStore:
         self._session.add(company)
         self._session.flush()
 
+        opportunity_payload = result.opportunity.model_dump(mode="json")
+        opportunity_payload["_source_input"] = source.model_dump(mode="json")
         opportunity = OpportunityRecord(
             id=str(result.opportunity.id),
             user_id=str(profile.user_id),
             company_id=company.id,
             source_url=str(source.source_url) if source.source_url else None,
             raw_text=source.raw_text,
-            opportunity_json=result.opportunity.model_dump(mode="json"),
+            opportunity_json=opportunity_payload,
             status=result.recommendation.decision.value,
         )
         self._session.add(opportunity)

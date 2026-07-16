@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from opportunityos.api.dependencies import get_store
 from opportunityos.evaluation.models import (
     EvaluationDataset,
+    EvaluationDatasetCollection,
     ExtendEvaluationDatasetRequest,
     MergeEvaluationDatasetsRequest,
 )
@@ -34,6 +35,42 @@ def root() -> RedirectResponse:
 @router.get("/app/")
 def application_shell() -> FileResponse:
     return FileResponse(STATIC_ROOT / "index.html", media_type="text/html")
+
+
+@router.get(
+    "/v1/users/{user_id}/evaluation-datasets/latest",
+    response_model=EvaluationDatasetCollection,
+)
+def list_latest_evaluation_datasets(
+    user_id: UUID,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> EvaluationDatasetCollection:
+    try:
+        store.get_profile(user_id)
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
+    return EvaluationDatasetCollection(
+        user_id=user_id,
+        datasets=store.list_evaluation_datasets(user_id, include_history=False),
+    )
+
+
+@router.get(
+    "/v1/users/{user_id}/evaluation-datasets/history",
+    response_model=EvaluationDatasetCollection,
+)
+def list_evaluation_dataset_history(
+    user_id: UUID,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> EvaluationDatasetCollection:
+    try:
+        store.get_profile(user_id)
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
+    return EvaluationDatasetCollection(
+        user_id=user_id,
+        datasets=store.list_evaluation_datasets(user_id, include_history=True),
+    )
 
 
 @router.post(

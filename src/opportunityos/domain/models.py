@@ -69,6 +69,7 @@ class OpportunityInput(BaseModel):
     source_url: HttpUrl | None = None
     raw_text: str | None = Field(default=None, max_length=100_000)
     company_hint: str | None = Field(default=None, max_length=250)
+    role_hint: str | None = Field(default=None, max_length=300)
 
     @model_validator(mode="after")
     def require_source(self) -> OpportunityInput:

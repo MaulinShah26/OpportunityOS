@@ -139,6 +139,21 @@ def _merge_cases(datasets: list[EvaluationDataset]) -> list[EvaluationCase]:
     return merged
 
 
+def _source_input(opportunity: OpportunityRecord, extracted: object) -> OpportunityInput:
+    stored = opportunity.opportunity_json.get("_source_input")
+    if isinstance(stored, dict):
+        try:
+            return OpportunityInput.model_validate(stored)
+        except ValueError:
+            pass
+    company_name = getattr(extracted, "company_name", None)
+    return OpportunityInput(
+        source_url=opportunity.source_url,
+        raw_text=opportunity.raw_text,
+        company_hint=company_name,
+    )
+
+
 class EvaluationStoreMixin:
     """Persistence methods for immutable, user-labelled evaluation snapshots."""
 
@@ -237,11 +252,7 @@ class EvaluationStoreMixin:
                 EvaluationCandidate(
                     case_id=f"analysis-{run.id}",
                     name=f"{extracted.company_name} — {extracted.title}",
-                    opportunity=OpportunityInput(
-                        source_url=opportunity.source_url,
-                        raw_text=opportunity.raw_text,
-                        company_hint=extracted.company_name,
-                    ),
+                    opportunity=_source_input(opportunity, extracted),
                     expected_decision=expected,
                     source_analysis_id=UUID(run.id),
                     label_action=action,
@@ -407,7 +418,12 @@ class EvaluationStoreMixin:
         )
         return self._persist_dataset(user_id, dataset)
 
-    def list_evaluation_datasets(self, user_id: UUID) -> list[EvaluationDatasetSummary]:
+    def list_evaluation_datasets(
+        self,
+        user_id: UUID,
+        *,
+        include_history: bool = True,
+    ) -> list[EvaluationDatasetSummary]:
         records = sorted(
             self._active_dataset_records(user_id),
             key=lambda record: record.created_at,
@@ -418,7 +434,13 @@ class EvaluationStoreMixin:
             key = _normalise_dataset_name(record.name)
             revisions[key] += 1
             summaries.append(_dataset_summary(record, revisions[key]))
-        return list(reversed(summaries))
+        if include_history:
+            return list(reversed(summaries))
+
+        latest_by_name: dict[str, EvaluationDatasetSummary] = {}
+        for summary in summaries:
+            latest_by_name[_normalise_dataset_name(summary.name)] = summary
+        return sorted(latest_by_name.values(), key=lambda item: item.created_at, reverse=True)
 
     def get_evaluation_dataset(self, user_id: UUID, dataset_id: UUID) -> EvaluationDataset:
         record = self._session.scalar(

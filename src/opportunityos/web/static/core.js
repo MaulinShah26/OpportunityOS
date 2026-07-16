@@ -6,6 +6,7 @@ const state = {
   audit: [],
   evaluationDatasets: [],
   evaluationReport: null,
+  evaluationShowHistory: false,
 };
 
 const viewCopy = {
@@ -188,6 +189,7 @@ function clearProfile() {
   state.audit = [];
   state.evaluationDatasets = [];
   state.evaluationReport = null;
+  state.evaluationShowHistory = false;
   localStorage.removeItem("opportunityos.userId");
   $("#active-user-label").textContent = "No active profile";
   $("#change-profile-button").classList.add("is-hidden");
