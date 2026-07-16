@@ -81,6 +81,18 @@
 .threshold-comparison span, .threshold-comparison small { display: block; color: var(--muted); }
 .threshold-comparison strong { display: block; margin: 7px 0; font-size: 17px; }
 
+.evaluation-candidates { display: grid; gap: 12px; }
+.evaluation-candidate { border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); overflow: hidden; }
+.candidate-heading { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; padding: 16px; }
+.candidate-heading strong { font-size: 14px; }
+.candidate-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+.evaluation-candidate details { border-top: 1px solid var(--line); padding: 14px 16px 16px; background: white; }
+.evaluation-candidate summary { cursor: pointer; color: var(--accent-dark); font-size: 13px; font-weight: 750; }
+.candidate-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; margin-top: 15px; }
+.candidate-wide { grid-column: 1 / -1; }
+.candidate-confirm-label { display: flex; grid-template-columns: none; flex-direction: row; align-items: flex-start; gap: 8px; margin-top: 16px; padding: 12px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-dark); font-size: 13px; }
+.candidate-confirm-label input, .candidate-heading input { width: auto; margin-top: 2px; }
+
 .memory-layout { display: grid; gap: 20px; }
 .memory-group { border: 1px solid var(--line); border-radius: var(--radius); background: white; overflow: hidden; }
 .memory-group-heading { display: flex; justify-content: space-between; padding: 17px 20px; border-bottom: 1px solid var(--line); background: var(--surface-soft); }
@@ -136,7 +148,9 @@
 }
 
 @media (max-width: 620px) {
-  .two-column-fields, .profile-overview, .memory-item, .audit-item, .evaluation-case { grid-template-columns: 1fr; }
+  .two-column-fields, .profile-overview, .memory-item, .audit-item, .evaluation-case, .candidate-grid { grid-template-columns: 1fr; }
+  .candidate-wide { grid-column: auto; }
+  .candidate-heading { flex-direction: column; }
   .evaluation-metrics, .compact-metrics { grid-template-columns: repeat(2, minmax(110px, 1fr)); }
   .form-action-row { align-items: stretch; flex-direction: column; }
   .card-heading { flex-direction: column; }
