@@ -66,7 +66,9 @@ class EvaluationCase(BaseModel):
 class EvaluationDataset(BaseModel):
     dataset_id: UUID = Field(default_factory=uuid4)
     name: str = Field(min_length=2, max_length=200)
-    schema_version: str = "1.2"
+    schema_version: str = "1.3"
+    revision: int = Field(default=1, ge=1)
+    parent_dataset_ids: list[UUID] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
     profile: PersonalProfile
     cases: list[EvaluationCase] = Field(min_length=1)
@@ -78,6 +80,8 @@ class EvaluationDatasetSummary(BaseModel):
     dataset_id: UUID
     user_id: UUID
     name: str
+    revision: int = Field(default=1, ge=1)
+    parent_dataset_ids: list[UUID] = Field(default_factory=list)
     case_count: int = Field(ge=0)
     decision_labels: dict[str, int] = Field(default_factory=dict)
     extraction_label_count: int = Field(default=0, ge=0)
@@ -93,6 +97,14 @@ class EvaluationDatasetCollection(BaseModel):
 class CreateEvaluationDatasetRequest(BaseModel):
     name: str = Field(min_length=2, max_length=200)
     extraction_labels: list[EvaluationCaseLabel] = Field(default_factory=list)
+
+
+class ExtendEvaluationDatasetRequest(BaseModel):
+    extraction_labels: list[EvaluationCaseLabel] = Field(min_length=1)
+
+
+class MergeEvaluationDatasetsRequest(BaseModel):
+    source_dataset_ids: list[UUID] = Field(min_length=2)
 
 
 class DecisionPolicySnapshot(BaseModel):

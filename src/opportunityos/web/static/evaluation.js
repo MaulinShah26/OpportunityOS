@@ -8,19 +8,77 @@ function decisionLabelHtml(labels) {
     .join("");
 }
 
+function normalisedDatasetName(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function updateMergeButton() {
+  const button = $("#merge-evaluation-datasets-button");
+  if (!button) return;
+  const selected = $$(".dataset-merge-select:checked");
+  button.disabled = selected.length < 2;
+  button.textContent = selected.length < 2
+    ? "Select snapshots to combine"
+    : `Combine ${selected.length} selected snapshots`;
+}
+
 function renderEvaluationDatasets() {
   const target = $("#evaluation-datasets");
   if (!state.evaluationDatasets.length) {
     target.innerHTML = `<article class="card evaluation-empty"><p class="section-kicker">No frozen dataset</p><h2>Label real opportunities first</h2><p class="memory-value">Analyse opportunities and record Worth pursuing, Save signal, or Not relevant.</p></article>`;
     return;
   }
-  target.innerHTML = state.evaluationDatasets.map((dataset) => `
-    <article class="card evaluation-dataset-card">
-      <div class="card-heading"><div><p class="section-kicker">Frozen dataset</p><h2>${escapeHtml(dataset.name)}</h2><p class="memory-value">Created ${escapeHtml(formatDate(dataset.created_at))} · ${dataset.case_count} cases · ${dataset.extraction_label_count || 0} extraction-labelled</p></div><span class="${dataset.ready_for_comparison ? "privacy-badge" : "selective-badge"}">${dataset.ready_for_comparison ? "Comparison ready" : "Directional sample"}</span></div>
-      <div class="decision-row evaluation-labels">${decisionLabelHtml(dataset.decision_labels)}</div>
-      <div class="feedback-actions"><button class="button button-primary evaluation-run-button" data-dataset-id="${escapeHtml(dataset.dataset_id)}" type="button">Run current mode</button></div>
-    </article>`).join("");
-  $$(".evaluation-run-button", target).forEach((button) => button.addEventListener("click", () => runEvaluation(button.dataset.datasetId, button)));
+
+  const latestRevisionByName = {};
+  state.evaluationDatasets.forEach((dataset) => {
+    const key = normalisedDatasetName(dataset.name);
+    latestRevisionByName[key] = Math.max(latestRevisionByName[key] || 0, dataset.revision || 1);
+  });
+
+  target.innerHTML = `
+    <article class="card evaluation-lineage-controls">
+      <div class="card-heading">
+        <div>
+          <p class="section-kicker">Frozen snapshot management</p>
+          <h2>Combine split benchmark snapshots</h2>
+          <p class="memory-value">Select snapshots with the same benchmark name. OpportunityOS creates a new immutable revision containing their distinct cases; the original snapshots remain unchanged.</p>
+        </div>
+        <button id="merge-evaluation-datasets-button" class="button button-secondary" type="button" disabled>Select snapshots to combine</button>
+      </div>
+    </article>
+    ${state.evaluationDatasets.map((dataset) => {
+      const revision = dataset.revision || 1;
+      const isLatest = revision === latestRevisionByName[normalisedDatasetName(dataset.name)];
+      const lineage = (dataset.parent_dataset_ids || []).length
+        ? ` · derived from ${(dataset.parent_dataset_ids || []).length} snapshot${dataset.parent_dataset_ids.length === 1 ? "" : "s"}`
+        : "";
+      return `
+        <article class="card evaluation-dataset-card" data-dataset-id="${escapeHtml(dataset.dataset_id)}" data-dataset-name="${escapeHtml(dataset.name)}">
+          <div class="card-heading">
+            <div>
+              <p class="section-kicker">Frozen dataset · revision ${revision}${isLatest ? " · latest" : ""}</p>
+              <h2>${escapeHtml(dataset.name)}</h2>
+              <p class="memory-value">Created ${escapeHtml(formatDate(dataset.created_at))} · ${dataset.case_count} cases · ${dataset.extraction_label_count || 0} extraction-labelled${lineage}</p>
+            </div>
+            <span class="${dataset.ready_for_comparison ? "privacy-badge" : "selective-badge"}">${dataset.ready_for_comparison ? "Comparison ready" : "Directional sample"}</span>
+          </div>
+          <div class="decision-row evaluation-labels">${decisionLabelHtml(dataset.decision_labels)}</div>
+          <div class="feedback-actions">
+            <button class="button button-primary evaluation-run-button" data-dataset-id="${escapeHtml(dataset.dataset_id)}" type="button">Run current mode</button>
+            <button class="button button-secondary evaluation-extend-button" data-dataset-id="${escapeHtml(dataset.dataset_id)}" data-dataset-name="${escapeHtml(dataset.name)}" type="button">Extend with new cases</button>
+            <label class="toggle-label dataset-merge-label"><input class="dataset-merge-select" data-dataset-id="${escapeHtml(dataset.dataset_id)}" data-dataset-name="${escapeHtml(dataset.name)}" type="checkbox"> Select snapshot</label>
+          </div>
+        </article>`;
+    }).join("")}`;
+
+  $$(".evaluation-run-button", target).forEach((button) => {
+    button.addEventListener("click", () => runEvaluation(button.dataset.datasetId, button));
+  });
+  $$(".evaluation-extend-button", target).forEach((button) => {
+    button.addEventListener("click", () => startDatasetExtension(button.dataset.datasetId, button.dataset.datasetName, button));
+  });
+  $$(".dataset-merge-select", target).forEach((input) => input.addEventListener("change", updateMergeButton));
+  $("#merge-evaluation-datasets-button").addEventListener("click", mergeSelectedDatasets);
 }
 
 async function loadEvaluationDatasets() {
@@ -50,7 +108,7 @@ function candidateEditorHtml(candidate) {
           <p class="section-kicker">Expected ${escapeHtml(candidate.expected_decision)}</p>
           <h3>${escapeHtml(candidate.name)}</h3>
         </div>
-        <label class="toggle-label"><input data-field="selected" type="checkbox" checked> Include in v3</label>
+        <label class="toggle-label"><input data-field="selected" type="checkbox" checked> Include in this revision</label>
       </div>
       <div class="issue-card info"><p>Confirm these values against the original source. Remove inferred or irrelevant items rather than accepting them automatically.</p></div>
       <div class="two-column-fields">
@@ -64,6 +122,31 @@ function candidateEditorHtml(candidate) {
       <label><span>Problem areas <small>comma-separated</small></span><input data-field="problem_areas" value="${escapeHtml((item.problem_areas || []).join(", "))}"></label>
       <label><span>Responsibilities or workflows <small>comma-separated</small></span><input data-field="responsibilities" value="${escapeHtml((item.responsibilities || []).join(", "))}"></label>
     </article>`;
+}
+
+function setDatasetBuildMode(datasetId = null, datasetName = "") {
+  state.evaluationBaseDatasetId = datasetId;
+  const form = $("#evaluation-dataset-form");
+  const input = $("input[name='name']", form);
+  const submit = $("button[type='submit']", form);
+  let mode = $("#evaluation-build-mode");
+  if (!mode) {
+    mode = document.createElement("div");
+    mode.id = "evaluation-build-mode";
+    form.prepend(mode);
+  }
+
+  if (datasetId) {
+    input.value = datasetName;
+    input.readOnly = true;
+    submit.textContent = "Create extended revision";
+    mode.innerHTML = `<div class="issue-card info"><p><strong>Extending ${escapeHtml(datasetName)}</strong></p><p>The selected frozen snapshot will be preserved. New reviewed cases will be added into a new immutable revision.</p><button id="cancel-dataset-extension" class="button button-small button-ghost" type="button">Cancel extension</button></div>`;
+    $("#cancel-dataset-extension").addEventListener("click", () => setDatasetBuildMode());
+  } else {
+    input.readOnly = false;
+    submit.textContent = "Create frozen dataset";
+    mode.innerHTML = `<div class="explanation-box"><strong>New benchmark series</strong><p>Use a new unique name. To add cases to an existing benchmark, select Extend on that snapshot.</p></div>`;
+  }
 }
 
 async function loadEvaluationCandidates(button) {
@@ -82,12 +165,12 @@ async function loadEvaluationCandidates(button) {
       $("#evaluation-dataset-form").after(target);
     }
     const exclusionNote = priorCount
-      ? `<div class="issue-card info"><p>${priorCount} calibration case${priorCount === 1 ? " was" : "s were"} excluded because they already appear in an earlier frozen dataset.</p></div>`
+      ? `<div class="issue-card info"><p>${priorCount} case${priorCount === 1 ? " was" : "s were"} excluded because they already belong to a frozen snapshot.</p></div>`
       : "";
     target.innerHTML = newCandidates.length
-      ? `${exclusionNote}<div class="issue-card warning"><p>Benchmark v3 must contain only new cases. Review each extraction label before freezing; do not tune the system after seeing its first v3 results.</p></div>${newCandidates.map(candidateEditorHtml).join("")}`
-      : `${exclusionNote}<div class="blocked-outreach"><strong>No new decided opportunities</strong><p>Analyse and explicitly decide new opportunities before building benchmark v3.</p></div>`;
-    showNotice(`${newCandidates.length} new cases loaded; ${priorCount} prior cases excluded.`);
+      ? `${exclusionNote}<div class="issue-card warning"><p>Review each extraction label before freezing. Existing snapshots remain immutable; this operation creates a new revision.</p></div>${newCandidates.map(candidateEditorHtml).join("")}`
+      : `${exclusionNote}<div class="blocked-outreach"><strong>No new decided opportunities</strong><p>Analyse and explicitly decide new opportunities before creating or extending a benchmark.</p></div>`;
+    showNotice(`${newCandidates.length} new cases loaded; ${priorCount} frozen cases excluded.`);
   } catch (error) {
     showNotice(error.message, "error");
   } finally {
@@ -95,24 +178,57 @@ async function loadEvaluationCandidates(button) {
   }
 }
 
+async function startDatasetExtension(datasetId, datasetName, button) {
+  setDatasetBuildMode(datasetId, datasetName);
+  $("#evaluation-dataset-form").scrollIntoView({ behavior: "smooth", block: "start" });
+  await loadEvaluationCandidates(button);
+}
+
 function collectExtractionLabels() {
-  return $$(".extraction-candidate").filter((card) => $("[data-field='selected']", card)?.checked).map((card) => {
-    const value = (field) => $(`[data-field='${field}']`, card)?.value || "";
-    const remote = value("remote_allowed");
-    return {
-      source_analysis_id: card.dataset.analysisId,
-      expected: {
-        company_name: value("company_name").trim() || null,
-        title: value("title").trim() || null,
-        opportunity_type: value("opportunity_type") || null,
-        location: value("location").trim() || null,
-        remote_allowed: remote === "" ? null : remote === "true",
-        required_skills: splitLabels(value("required_skills")),
-        problem_areas: splitLabels(value("problem_areas")),
-        responsibilities: splitLabels(value("responsibilities")),
-      },
-    };
-  });
+  return $$(".extraction-candidate")
+    .filter((card) => $("[data-field='selected']", card)?.checked)
+    .map((card) => {
+      const value = (field) => $(`[data-field='${field}']`, card)?.value || "";
+      const remote = value("remote_allowed");
+      return {
+        source_analysis_id: card.dataset.analysisId,
+        expected: {
+          company_name: value("company_name").trim() || null,
+          title: value("title").trim() || null,
+          opportunity_type: value("opportunity_type") || null,
+          location: value("location").trim() || null,
+          remote_allowed: remote === "" ? null : remote === "true",
+          required_skills: splitLabels(value("required_skills")),
+          problem_areas: splitLabels(value("problem_areas")),
+          responsibilities: splitLabels(value("responsibilities")),
+        },
+      };
+    });
+}
+
+async function mergeSelectedDatasets() {
+  const button = $("#merge-evaluation-datasets-button");
+  const selected = $$(".dataset-merge-select:checked");
+  if (selected.length < 2) return;
+  const names = [...new Set(selected.map((input) => normalisedDatasetName(input.dataset.datasetName)))];
+  if (names.length !== 1) {
+    showNotice("Select snapshots with the same benchmark name.", "error");
+    return;
+  }
+  setBusy(button, true, "Combining snapshots…");
+  try {
+    const dataset = await api(`/v1/users/${state.userId}/evaluation-datasets/merge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source_dataset_ids: selected.map((input) => input.dataset.datasetId) }),
+    });
+    showNotice(`Created ${dataset.name} revision ${dataset.revision} with ${dataset.cases.length} distinct cases. Original snapshots were preserved.`);
+    await loadEvaluationDatasets();
+  } catch (error) {
+    showNotice(error.message, "error");
+  } finally {
+    setBusy(button, false);
+  }
 }
 
 function signedScore(value) {
@@ -127,7 +243,10 @@ function extractionChecksHtml(item) {
 }
 
 function fitDiagnosticsHtml(item) {
-  const contributions = Object.entries(item.fit_contributions || {}).sort((a, b) => b[1] - a[1]).map(([name, contribution]) => `<div class="diagnostic-row"><span>${escapeHtml(humanise(name))}</span><strong>${Number(contribution).toFixed(1)} points</strong></div>`).join("");
+  const contributions = Object.entries(item.fit_contributions || {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, contribution]) => `<div class="diagnostic-row"><span>${escapeHtml(humanise(name))}</span><strong>${Number(contribution).toFixed(1)} points</strong></div>`)
+    .join("");
   const gates = item.decision_gates || [];
   return `<details class="evaluation-diagnostics"><summary>Why this score and decision?</summary><div class="diagnostic-grid"><div class="diagnostic-row"><span>Extraction confidence</span><strong>${percentage(item.extraction_confidence)}</strong></div><div class="diagnostic-row"><span>Margin above HOLD threshold</span><strong>${signedScore(item.distance_to_hold_threshold)}</strong></div><div class="diagnostic-row"><span>Margin above PURSUE threshold</span><strong>${signedScore(item.distance_to_pursue_threshold)}</strong></div>${contributions}</div>${gates.length ? `<div class="issue-card warning"><p><strong>Decision gate:</strong> ${gates.map((code) => escapeHtml(humanise(code))).join(", ")}</p></div>` : `<p>Decision gates: none</p>`}<h4>Extraction checks</h4>${extractionChecksHtml(item)}</details>`;
 }
@@ -200,6 +319,7 @@ async function runEvaluation(datasetId, button) {
 function bindEvaluationEvents() {
   $("#refresh-evaluations-button").addEventListener("click", loadEvaluationDatasets);
   const form = $("#evaluation-dataset-form");
+  setDatasetBuildMode();
   const reviewButton = document.createElement("button");
   reviewButton.className = "button button-secondary";
   reviewButton.type = "button";
@@ -211,25 +331,34 @@ function bindEvaluationEvents() {
     if (!requireProfile()) return;
     const labels = collectExtractionLabels();
     if (!$("#evaluation-candidate-editor")) {
-      showNotice("Review new extraction labels before creating benchmark v3.", "error");
+      showNotice("Review new extraction labels before creating or extending a benchmark.", "error");
       return;
     }
     if (!labels.length) {
-      showNotice("Select at least one new reviewed opportunity for this frozen dataset.", "error");
+      showNotice("Select at least one new reviewed opportunity.", "error");
       return;
     }
     const button = $("button[type='submit']", form);
     const name = String(new FormData(form).get("name") || "").trim();
-    setBusy(button, true, "Freezing dataset…");
+    const baseDatasetId = state.evaluationBaseDatasetId;
+    const endpoint = baseDatasetId
+      ? `/v1/users/${state.userId}/evaluation-datasets/${baseDatasetId}/extend`
+      : `/v1/users/${state.userId}/evaluation-datasets`;
+    const payload = baseDatasetId
+      ? { extraction_labels: labels }
+      : { name, extraction_labels: labels };
+    setBusy(button, true, baseDatasetId ? "Creating extended revision…" : "Freezing dataset…");
     try {
-      const dataset = await api(`/v1/users/${state.userId}/evaluation-datasets`, {
+      const dataset = await api(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, extraction_labels: labels }),
+        body: JSON.stringify(payload),
       });
-      showNotice(`Frozen ${dataset.cases.length} new decisions with complete reviewed extraction labels.`);
+      showNotice(`Created ${dataset.name} revision ${dataset.revision} with ${dataset.cases.length} cases.`);
       $("#evaluation-candidate-editor").remove();
       state.evaluationCandidates = [];
+      setDatasetBuildMode();
+      form.reset();
       await loadEvaluationDatasets();
     } catch (error) {
       showNotice(error.message, "error");
