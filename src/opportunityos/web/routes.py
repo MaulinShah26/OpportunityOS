@@ -1,9 +1,23 @@
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse, RedirectResponse
+
+from opportunityos.api.dependencies import get_store
+from opportunityos.evaluation.models import (
+    EvaluationDataset,
+    ExtendEvaluationDatasetRequest,
+    MergeEvaluationDatasetsRequest,
+)
+from opportunityos.infrastructure.database import (
+    EvaluationDatasetEmptyError,
+    EvaluationDatasetNotFoundError,
+    ProfileNotFoundError,
+    SqlAlchemyStore,
+)
 
 WEB_ROOT = Path(__file__).resolve().parent
 STATIC_ROOT = WEB_ROOT / "static"
@@ -20,3 +34,44 @@ def root() -> RedirectResponse:
 @router.get("/app/")
 def application_shell() -> FileResponse:
     return FileResponse(STATIC_ROOT / "index.html", media_type="text/html")
+
+
+@router.post(
+    "/v1/users/{user_id}/evaluation-datasets/merge",
+    response_model=EvaluationDataset,
+    status_code=status.HTTP_201_CREATED,
+)
+def merge_evaluation_datasets(
+    user_id: UUID,
+    request: MergeEvaluationDatasetsRequest,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> EvaluationDataset:
+    try:
+        return store.merge_evaluation_datasets(user_id, request.source_dataset_ids)
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
+    except EvaluationDatasetNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evaluation dataset not found") from exc
+    except EvaluationDatasetEmptyError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/v1/users/{user_id}/evaluation-datasets/{dataset_id}/extend",
+    response_model=EvaluationDataset,
+    status_code=status.HTTP_201_CREATED,
+)
+def extend_evaluation_dataset(
+    user_id: UUID,
+    dataset_id: UUID,
+    request: ExtendEvaluationDatasetRequest,
+    store: SqlAlchemyStore = Depends(get_store),
+) -> EvaluationDataset:
+    try:
+        return store.extend_evaluation_dataset(user_id, dataset_id, request.extraction_labels)
+    except ProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found") from exc
+    except EvaluationDatasetNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evaluation dataset not found") from exc
+    except EvaluationDatasetEmptyError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
