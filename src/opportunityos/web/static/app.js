@@ -58,7 +58,7 @@ function bindEvents() {
     const button = $("button[type='submit']", event.currentTarget);
     const data = new FormData(event.currentTarget);
     const opportunity = {};
-    ["company_hint", "source_url", "raw_text"].forEach((key) => {
+    ["company_hint", "role_hint", "source_url", "raw_text"].forEach((key) => {
       const value = String(data.get(key) || "").trim();
       if (value) opportunity[key] = value;
     });
