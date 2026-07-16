@@ -45,15 +45,24 @@ function candidateEditorHtml(candidate) {
   const remote = item.remote_allowed === true ? "true" : item.remote_allowed === false ? "false" : "";
   return `
     <article class="card extraction-candidate" data-analysis-id="${escapeHtml(candidate.source_analysis_id)}">
-      <div class="card-heading"><div><p class="section-kicker">Expected ${escapeHtml(candidate.expected_decision)}</p><h3>${escapeHtml(candidate.name)}</h3></div><span class="selective-badge">Review extraction</span></div>
+      <div class="card-heading">
+        <div>
+          <p class="section-kicker">Expected ${escapeHtml(candidate.expected_decision)}</p>
+          <h3>${escapeHtml(candidate.name)}</h3>
+        </div>
+        <label class="toggle-label"><input data-field="selected" type="checkbox" checked> Include in v3</label>
+      </div>
+      <div class="issue-card info"><p>Confirm these values against the original source. Remove inferred or irrelevant items rather than accepting them automatically.</p></div>
       <div class="two-column-fields">
         <label><span>Expected company</span><input data-field="company_name" value="${escapeHtml(item.company_name || "")}"></label>
         <label><span>Expected title</span><input data-field="title" value="${escapeHtml(item.title || "")}"></label>
         <label><span>Opportunity type</span><select data-field="opportunity_type">${["", "consulting", "fractional", "contract", "full_time", "advisory", "partnership", "unknown"].map((value) => `<option value="${value}" ${value === (item.opportunity_type || "") ? "selected" : ""}>${value ? humanise(value) : "Not labelled"}</option>`).join("")}</select></label>
         <label><span>Remote allowed</span><select data-field="remote_allowed"><option value="" ${remote === "" ? "selected" : ""}>Not labelled</option><option value="true" ${remote === "true" ? "selected" : ""}>Yes</option><option value="false" ${remote === "false" ? "selected" : ""}>No</option></select></label>
       </div>
+      <label><span>Expected location <small>leave blank when not stated</small></span><input data-field="location" value="${escapeHtml(item.location || "")}"></label>
       <label><span>Required skills <small>comma-separated</small></span><input data-field="required_skills" value="${escapeHtml((item.required_skills || []).join(", "))}"></label>
       <label><span>Problem areas <small>comma-separated</small></span><input data-field="problem_areas" value="${escapeHtml((item.problem_areas || []).join(", "))}"></label>
+      <label><span>Responsibilities or workflows <small>comma-separated</small></span><input data-field="responsibilities" value="${escapeHtml((item.responsibilities || []).join(", "))}"></label>
     </article>`;
 }
 
@@ -61,7 +70,10 @@ async function loadEvaluationCandidates(button) {
   setBusy(button, true, "Loading cases…");
   try {
     const response = await api(`/v1/users/${state.userId}/evaluation-candidates`);
-    state.evaluationCandidates = response.candidates || [];
+    const allCandidates = response.candidates || [];
+    const newCandidates = allCandidates.filter((item) => !item.previously_frozen);
+    const priorCount = allCandidates.length - newCandidates.length;
+    state.evaluationCandidates = newCandidates;
     let target = $("#evaluation-candidate-editor");
     if (!target) {
       target = document.createElement("div");
@@ -69,10 +81,13 @@ async function loadEvaluationCandidates(button) {
       target.className = "evaluation-layout";
       $("#evaluation-dataset-form").after(target);
     }
-    target.innerHTML = state.evaluationCandidates.length
-      ? `<div class="issue-card info"><p>Review these expected fields before freezing. Correct anything the system extracted incorrectly.</p></div>${state.evaluationCandidates.map(candidateEditorHtml).join("")}`
-      : `<div class="blocked-outreach"><strong>No decided opportunities</strong><p>Record explicit decisions first.</p></div>`;
-    showNotice(`${state.evaluationCandidates.length} cases loaded for extraction review.`);
+    const exclusionNote = priorCount
+      ? `<div class="issue-card info"><p>${priorCount} calibration case${priorCount === 1 ? " was" : "s were"} excluded because they already appear in an earlier frozen dataset.</p></div>`
+      : "";
+    target.innerHTML = newCandidates.length
+      ? `${exclusionNote}<div class="issue-card warning"><p>Benchmark v3 must contain only new cases. Review each extraction label before freezing; do not tune the system after seeing its first v3 results.</p></div>${newCandidates.map(candidateEditorHtml).join("")}`
+      : `${exclusionNote}<div class="blocked-outreach"><strong>No new decided opportunities</strong><p>Analyse and explicitly decide new opportunities before building benchmark v3.</p></div>`;
+    showNotice(`${newCandidates.length} new cases loaded; ${priorCount} prior cases excluded.`);
   } catch (error) {
     showNotice(error.message, "error");
   } finally {
@@ -81,7 +96,7 @@ async function loadEvaluationCandidates(button) {
 }
 
 function collectExtractionLabels() {
-  return $$(".extraction-candidate").map((card) => {
+  return $$(".extraction-candidate").filter((card) => $("[data-field='selected']", card)?.checked).map((card) => {
     const value = (field) => $(`[data-field='${field}']`, card)?.value || "";
     const remote = value("remote_allowed");
     return {
@@ -90,9 +105,11 @@ function collectExtractionLabels() {
         company_name: value("company_name").trim() || null,
         title: value("title").trim() || null,
         opportunity_type: value("opportunity_type") || null,
+        location: value("location").trim() || null,
         remote_allowed: remote === "" ? null : remote === "true",
         required_skills: splitLabels(value("required_skills")),
         problem_areas: splitLabels(value("problem_areas")),
+        responsibilities: splitLabels(value("responsibilities")),
       },
     };
   });
@@ -121,7 +138,8 @@ function caseResultHtml(item) {
   const company = item.extracted_company_name || item.analysis?.opportunity?.company_name || "Unknown company";
   const title = item.extracted_title || item.analysis?.opportunity?.title || item.name;
   const opportunityType = item.extracted_opportunity_type || item.analysis?.opportunity?.opportunity_type;
-  return `<div class="evaluation-case ${item.correct ? "is-correct" : "is-mismatch"}"><div><strong>${escapeHtml(`${company} — ${title}`)}</strong><p>Expected ${escapeHtml(item.expected_decision)} · predicted ${escapeHtml(predicted)} · fit ${item.fit_score}${opportunityType ? ` · ${escapeHtml(humanise(opportunityType))}` : ""}</p><p>${item.extraction_checks_passed}/${item.extraction_checks} extraction checks passed · critic ${item.critic_passed ? "passed" : "flagged"}</p>${fitDiagnosticsHtml(item)}</div><span class="decision-badge decision-${escapeHtml(predicted)}">${item.correct ? "match" : "mismatch"}</span></div>`;
+  const extractionLabel = item.extraction_case_correct == null ? "not labelled" : item.extraction_case_correct ? "fully correct" : "has mismatches";
+  return `<div class="evaluation-case ${item.correct ? "is-correct" : "is-mismatch"}"><div><strong>${escapeHtml(`${company} — ${title}`)}</strong><p>Expected ${escapeHtml(item.expected_decision)} · predicted ${escapeHtml(predicted)} · fit ${item.fit_score}${opportunityType ? ` · ${escapeHtml(humanise(opportunityType))}` : ""}</p><p>${item.extraction_checks_passed}/${item.extraction_checks} extraction checks passed · ${escapeHtml(extractionLabel)} · critic ${item.critic_passed ? "passed" : "flagged"}</p>${fitDiagnosticsHtml(item)}</div><span class="decision-badge decision-${escapeHtml(predicted)}">${item.correct ? "match" : "mismatch"}</span></div>`;
 }
 
 function predictionPatternHtml(metrics) {
@@ -133,6 +151,12 @@ function thresholdSimulationHtml(report) {
   const simulation = report.threshold_simulation;
   if (!simulation) return `<article class="card evaluation-diagnostic-card"><p class="section-kicker">Threshold calibration</p><h2>No better safe threshold candidate yet</h2><p class="memory-value">Current policy: HOLD at ${policy.hold_threshold}, PURSUE at ${policy.pursue_threshold}.</p></article>`;
   return `<article class="card evaluation-diagnostic-card"><p class="section-kicker">Exploratory threshold simulation</p><h2>A candidate policy fits this frozen sample better</h2><div class="threshold-comparison"><div><span>Current</span><strong>HOLD ${policy.hold_threshold} · PURSUE ${policy.pursue_threshold}</strong></div><div><span>Simulated</span><strong>HOLD ${simulation.hold_threshold} · PURSUE ${simulation.pursue_threshold}</strong><small>${percentage(simulation.decision_accuracy)} accuracy</small></div></div></article>`;
+}
+
+function extractionFieldSummaryHtml(metrics) {
+  const fields = Object.entries(metrics.extraction_accuracy_by_field || {});
+  if (!fields.length) return "";
+  return `<article class="card evaluation-diagnostic-card"><p class="section-kicker">Extraction fidelity</p><h2>Accuracy by reviewed field</h2><div class="diagnostic-grid">${fields.map(([field, value]) => `<div class="diagnostic-row"><span>${escapeHtml(humanise(field))}</span><strong>${percentage(value)}</strong></div>`).join("")}</div></article>`;
 }
 
 function downloadEvaluationReport() {
@@ -153,7 +177,8 @@ function renderEvaluationReport(report) {
   const target = $("#evaluation-report");
   const metrics = report.metrics;
   const extractionValue = metrics.extraction_accuracy == null ? "Not labelled" : percentage(metrics.extraction_accuracy);
-  target.innerHTML = `<article class="card evaluation-report-hero"><div class="card-heading"><div><p class="section-kicker">Latest benchmark run</p><h2>${escapeHtml(report.dataset_name)}</h2><p class="memory-value">Mode ${escapeHtml(report.mode)} · completed ${escapeHtml(formatDate(report.completed_at))}</p></div><button id="download-evaluation-report" class="button button-secondary" type="button">Download JSON</button></div><div class="evaluation-metrics"><div class="stat-box"><strong>${percentage(metrics.decision_accuracy)}</strong><span>decision accuracy</span></div><div class="stat-box"><strong>${extractionValue}</strong><span>extraction accuracy</span></div><div class="stat-box"><strong>${percentage(metrics.false_pursue_rate)}</strong><span>false pursue</span></div><div class="stat-box"><strong>${percentage(metrics.critic_pass_rate)}</strong><span>critic pass</span></div><div class="stat-box"><strong>${metrics.extraction_labelled_case_count}/${metrics.case_count}</strong><span>extraction-labelled</span></div><div class="stat-box"><strong>${metrics.total_model_calls}</strong><span>model calls</span></div></div></article>${predictionPatternHtml(metrics)}${thresholdSimulationHtml(report)}<article class="card"><p class="section-kicker">Case-by-case comparison</p><h2>Decision and extraction results</h2><div class="evaluation-cases">${report.cases.map(caseResultHtml).join("")}</div></article>`;
+  const extractionCaseValue = metrics.extraction_case_accuracy == null ? "Not labelled" : percentage(metrics.extraction_case_accuracy);
+  target.innerHTML = `<article class="card evaluation-report-hero"><div class="card-heading"><div><p class="section-kicker">Latest benchmark run</p><h2>${escapeHtml(report.dataset_name)}</h2><p class="memory-value">Mode ${escapeHtml(report.mode)} · completed ${escapeHtml(formatDate(report.completed_at))}</p></div><button id="download-evaluation-report" class="button button-secondary" type="button">Download JSON</button></div><div class="evaluation-metrics"><div class="stat-box"><strong>${percentage(metrics.decision_accuracy)}</strong><span>decision accuracy</span></div><div class="stat-box"><strong>${extractionValue}</strong><span>extraction field accuracy</span></div><div class="stat-box"><strong>${extractionCaseValue}</strong><span>fully correct cases</span></div><div class="stat-box"><strong>${percentage(metrics.false_pursue_rate)}</strong><span>false pursue</span></div><div class="stat-box"><strong>${metrics.extraction_labelled_case_count}/${metrics.case_count}</strong><span>extraction-labelled</span></div><div class="stat-box"><strong>${metrics.total_model_calls}</strong><span>model calls</span></div></div></article>${predictionPatternHtml(metrics)}${extractionFieldSummaryHtml(metrics)}${thresholdSimulationHtml(report)}<article class="card"><p class="section-kicker">Case-by-case comparison</p><h2>Decision and extraction results</h2><div class="evaluation-cases">${report.cases.map(caseResultHtml).join("")}</div></article>`;
   target.classList.remove("is-hidden");
   $("#download-evaluation-report").addEventListener("click", downloadEvaluationReport);
   target.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -178,12 +203,21 @@ function bindEvaluationEvents() {
   const reviewButton = document.createElement("button");
   reviewButton.className = "button button-secondary";
   reviewButton.type = "button";
-  reviewButton.textContent = "Review extraction labels";
+  reviewButton.textContent = "Review new extraction labels";
   form.insertBefore(reviewButton, $("button[type='submit']", form));
   reviewButton.addEventListener("click", () => loadEvaluationCandidates(reviewButton));
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!requireProfile()) return;
+    const labels = collectExtractionLabels();
+    if (!$("#evaluation-candidate-editor")) {
+      showNotice("Review new extraction labels before creating benchmark v3.", "error");
+      return;
+    }
+    if (!labels.length) {
+      showNotice("Select at least one new reviewed opportunity for this frozen dataset.", "error");
+      return;
+    }
     const button = $("button[type='submit']", form);
     const name = String(new FormData(form).get("name") || "").trim();
     setBusy(button, true, "Freezing dataset…");
@@ -191,9 +225,11 @@ function bindEvaluationEvents() {
       const dataset = await api(`/v1/users/${state.userId}/evaluation-datasets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, extraction_labels: collectExtractionLabels() }),
+        body: JSON.stringify({ name, extraction_labels: labels }),
       });
-      showNotice(`Frozen ${dataset.cases.length} decisions with ${collectExtractionLabels().length} reviewed extraction labels.`);
+      showNotice(`Frozen ${dataset.cases.length} new decisions with complete reviewed extraction labels.`);
+      $("#evaluation-candidate-editor").remove();
+      state.evaluationCandidates = [];
       await loadEvaluationDatasets();
     } catch (error) {
       showNotice(error.message, "error");

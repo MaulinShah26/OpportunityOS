@@ -13,9 +13,11 @@ class ExtractionExpectation(BaseModel):
     company_name: str | None = Field(default=None, max_length=240)
     title: str | None = Field(default=None, max_length=300)
     opportunity_type: OpportunityType | None = None
+    location: str | None = Field(default=None, max_length=300)
     remote_allowed: bool | None = None
     required_skills: list[str] = Field(default_factory=list)
     problem_areas: list[str] = Field(default_factory=list)
+    responsibilities: list[str] = Field(default_factory=list)
 
 
 class EvaluationCandidate(BaseModel):
@@ -27,6 +29,8 @@ class EvaluationCandidate(BaseModel):
     label_action: FeedbackAction | None = None
     label_reasons: list[FeedbackReason] = Field(default_factory=list)
     current_extraction: ExtractionExpectation
+    previously_frozen: bool = False
+    previous_dataset_names: list[str] = Field(default_factory=list)
 
 
 class EvaluationCandidateCollection(BaseModel):
@@ -47,9 +51,11 @@ class EvaluationCase(BaseModel):
     expected_company_name: str | None = Field(default=None, max_length=240)
     expected_title: str | None = Field(default=None, max_length=300)
     expected_opportunity_type: OpportunityType | None = None
+    expected_location: str | None = Field(default=None, max_length=300)
     expected_remote_allowed: bool | None = None
     expected_required_skills: list[str] = Field(default_factory=list)
     expected_problem_areas: list[str] = Field(default_factory=list)
+    expected_responsibilities: list[str] = Field(default_factory=list)
     expected_hard_constraint_breach: bool | None = None
     source_analysis_id: UUID | None = None
     label_action: FeedbackAction | None = None
@@ -60,7 +66,7 @@ class EvaluationCase(BaseModel):
 class EvaluationDataset(BaseModel):
     dataset_id: UUID = Field(default_factory=uuid4)
     name: str = Field(min_length=2, max_length=200)
-    schema_version: str = "1.1"
+    schema_version: str = "1.2"
     created_at: datetime = Field(default_factory=utcnow)
     profile: PersonalProfile
     cases: list[EvaluationCase] = Field(min_length=1)
@@ -121,6 +127,7 @@ class EvaluationCaseResult(BaseModel):
     fit_score: int | None = None
     extraction_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     extraction_field_results: dict[str, bool] = Field(default_factory=dict)
+    extraction_case_correct: bool | None = None
     fit_dimensions: dict[str, float] = Field(default_factory=dict)
     fit_contributions: dict[str, float] = Field(default_factory=dict)
     distance_to_hold_threshold: int | None = None
@@ -154,6 +161,7 @@ class EvaluationMetrics(BaseModel):
     evidence_present_rate: float = Field(ge=0.0, le=1.0)
     critic_pass_rate: float = Field(ge=0.0, le=1.0)
     extraction_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
+    extraction_case_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
     extraction_accuracy_by_field: dict[str, float] = Field(default_factory=dict)
     extraction_labelled_case_count: int = Field(default=0, ge=0)
     hard_constraint_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
