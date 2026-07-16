@@ -216,7 +216,7 @@ jobs:
           assert "data science" not in problem_keys
           assert "AI implementation" in problem_keys
           PY
-      - name: Verify PostgreSQL evaluation dataset and run
+      - name: Verify PostgreSQL extraction-labelled evaluation
         run: |
           USER_ID="$(python3 -c 'import json; print(json.load(open("onboarding-response.json"))["profile"]["user_id"])')"
           cat > evaluation-opportunity.json <<'EOF'
@@ -250,9 +250,36 @@ jobs:
             > evaluation-feedback-response.json
 
           curl --fail --silent --show-error \
-            -X POST "http://127.0.0.1:8000/v1/users/${USER_ID}/evaluation-datasets" \
+            "http://127.0.0.1:8000/v1/users/${USER_ID}/evaluation-candidates" \
+            > evaluation-candidates.json
+          python3 - <<'PY'
+          import json
+
+          candidates = json.load(open("evaluation-candidates.json"))["candidates"]
+          assert len(candidates) == 1
+          candidate = candidates[0]
+          label = {
+              "source_analysis_id": candidate["source_analysis_id"],
+              "confirmed": True,
+              "expected_company_name": candidate["extracted_company_name"],
+              "expected_title": candidate["extracted_title"],
+              "expected_opportunity_type": candidate["extracted_opportunity_type"],
+              "expected_remote_allowed": candidate["extracted_remote_allowed"],
+              "expected_location": candidate["extracted_location"],
+              "expected_required_skills": candidate["extracted_required_skills"],
+              "expected_problem_areas": candidate["extracted_problem_areas"],
+              "expected_responsibilities": candidate["extracted_responsibilities"],
+          }
+          json.dump(
+              {"name": "CI extraction-labelled benchmark", "extraction_labels": [label]},
+              open("evaluation-labelled-request.json", "w"),
+          )
+          PY
+
+          curl --fail --silent --show-error \
+            -X POST "http://127.0.0.1:8000/v1/users/${USER_ID}/evaluation-datasets-labelled" \
             -H 'Content-Type: application/json' \
-            --data '{"name":"CI PostgreSQL benchmark"}' \
+            --data @evaluation-labelled-request.json \
             > evaluation-dataset.json
           DATASET_ID="$(python3 -c 'import json; print(json.load(open("evaluation-dataset.json"))["dataset_id"])')"
 
@@ -261,6 +288,9 @@ jobs:
             > evaluation-run.json
           RUN_ID="$(python3 -c 'import json; print(json.load(open("evaluation-run.json"))["run_id"])')"
 
+          curl --fail --silent --show-error \
+            "http://127.0.0.1:8000/v1/users/${USER_ID}/evaluation-datasets" \
+            > evaluation-datasets.json
           curl --fail --silent --show-error \
             "http://127.0.0.1:8000/v1/users/${USER_ID}/evaluation-datasets/${DATASET_ID}/runs" \
             > evaluation-runs.json
@@ -276,8 +306,15 @@ jobs:
 
           dataset = json.load(open("evaluation-dataset.json"))
           assert dataset["frozen"] is True
+          assert dataset["schema_version"] == "1.1"
           assert len(dataset["cases"]) == 1
           assert dataset["cases"][0]["expected_decision"] == "pursue"
+          assert dataset["cases"][0]["extraction_label_confirmed"] is True
+
+          summaries = json.load(open("evaluation-datasets.json"))["datasets"]
+          summary = next(item for item in summaries if item["dataset_id"] == dataset["dataset_id"])
+          assert summary["extraction_labelled_case_count"] == 1
+          assert summary["extraction_ready"] is True
 
           report = json.load(open("evaluation-run.json"))
           assert report["mode"] == "mock"
@@ -285,6 +322,10 @@ jobs:
           assert report["metrics"]["case_count"] == 1
           assert report["metrics"]["completed_count"] == 1
           assert report["metrics"]["failed_count"] == 0
+          assert report["metrics"]["extraction_labelled_case_count"] == 1
+          assert report["metrics"]["extraction_field_count"] == 8
+          assert report["metrics"]["extraction_accuracy"] == 1.0
+          assert report["metrics"]["extraction_case_accuracy"] == 1.0
 
           listed = json.load(open("evaluation-runs.json"))["runs"]
           assert listed[0]["run_id"] == report["run_id"]
