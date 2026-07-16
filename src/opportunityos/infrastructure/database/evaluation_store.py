@@ -8,9 +8,11 @@ from sqlalchemy import select
 from opportunityos.domain.enums import Decision, FeedbackAction, FeedbackReason
 from opportunityos.domain.models import AnalysisResult, OpportunityInput, PersonalProfile
 from opportunityos.evaluation.models import (
+    EvaluationCandidate,
     EvaluationCase,
     EvaluationDataset,
     EvaluationDatasetSummary,
+    EvaluationExtractionLabel,
     EvaluationReport,
     EvaluationRunSummary,
 )
@@ -62,6 +64,8 @@ def _dataset_summary(record: EvaluationDatasetRecord) -> EvaluationDatasetSummar
     labels = {str(key): int(value) for key, value in record.decision_labels_json.items()}
     non_pursue = labels.get(Decision.HOLD.value, 0) + labels.get(Decision.REJECT.value, 0)
     ready = record.case_count >= 5 and labels.get(Decision.PURSUE.value, 0) > 0 and non_pursue > 0
+    dataset = EvaluationDataset.model_validate(record.dataset_json)
+    extraction_labelled = sum(case.extraction_label_confirmed for case in dataset.cases)
     return EvaluationDatasetSummary(
         dataset_id=UUID(record.id),
         user_id=UUID(record.user_id),
@@ -69,23 +73,50 @@ def _dataset_summary(record: EvaluationDatasetRecord) -> EvaluationDatasetSummar
         case_count=record.case_count,
         decision_labels=labels,
         ready_for_comparison=ready,
+        extraction_labelled_case_count=extraction_labelled,
+        extraction_ready=record.case_count > 0 and extraction_labelled == record.case_count,
         created_at=record.created_at,
+    )
+
+
+def _candidate(
+    event: BehaviourEventRecord,
+    run: AnalysisRunRecord,
+    opportunity: OpportunityRecord,
+) -> EvaluationCandidate | None:
+    action = _feedback_action(event.event_type)
+    expected = _FEEDBACK_TO_DECISION.get(action) if action is not None else None
+    if expected is None:
+        return None
+    stored_result = AnalysisResult.model_validate(run.result_json)
+    extracted = stored_result.opportunity
+    source = OpportunityInput(
+        source_url=opportunity.source_url,
+        raw_text=opportunity.raw_text,
+        company_hint=extracted.company_name,
+    )
+    return EvaluationCandidate(
+        source_analysis_id=UUID(run.id),
+        name=f"{extracted.company_name} — {extracted.title}",
+        expected_decision=expected,
+        label_action=action,
+        label_reasons=_feedback_reasons(event.event_json),
+        opportunity=source,
+        extracted_company_name=extracted.company_name,
+        extracted_title=extracted.title,
+        extracted_opportunity_type=extracted.opportunity_type,
+        extracted_remote_allowed=extracted.remote_allowed,
+        extracted_location=extracted.location,
+        extracted_required_skills=extracted.required_skills,
+        extracted_problem_areas=extracted.problem_areas,
+        extracted_responsibilities=extracted.responsibilities,
     )
 
 
 class EvaluationStoreMixin:
     """Persistence methods for immutable, user-labelled evaluation snapshots."""
 
-    def create_evaluation_dataset(self, user_id: UUID, name: str) -> EvaluationDataset:
-        profile_record = self._session.scalar(
-            select(PersonalProfileRecord).where(PersonalProfileRecord.user_id == str(user_id))
-        )
-        if profile_record is None:
-            from opportunityos.infrastructure.database.store import ProfileNotFoundError
-
-            raise ProfileNotFoundError(str(user_id))
-        profile = PersonalProfile.model_validate(profile_record.profile_json)
-
+    def _evaluation_candidates(self, user_id: UUID) -> list[EvaluationCandidate]:
         rows = self._session.execute(
             select(BehaviourEventRecord, AnalysisRunRecord, OpportunityRecord)
             .join(
@@ -104,36 +135,71 @@ class EvaluationStoreMixin:
             .order_by(BehaviourEventRecord.created_at.desc())
         ).all()
 
-        cases: list[EvaluationCase] = []
+        candidates: list[EvaluationCandidate] = []
         seen_analysis_ids: set[str] = set()
         for event, run, opportunity in rows:
             if run.id in seen_analysis_ids:
                 continue
             seen_analysis_ids.add(run.id)
-            action = _feedback_action(event.event_type)
-            expected = _FEEDBACK_TO_DECISION.get(action) if action is not None else None
-            if expected is None:
-                continue
+            candidate = _candidate(event, run, opportunity)
+            if candidate is not None:
+                candidates.append(candidate)
+        return candidates
 
-            stored_result = AnalysisResult.model_validate(run.result_json)
-            source = OpportunityInput(
-                source_url=opportunity.source_url,
-                raw_text=opportunity.raw_text,
-                company_hint=stored_result.opportunity.company_name,
-            )
+    def list_evaluation_candidates(self, user_id: UUID) -> list[EvaluationCandidate]:
+        profile_record = self._session.scalar(
+            select(PersonalProfileRecord).where(PersonalProfileRecord.user_id == str(user_id))
+        )
+        if profile_record is None:
+            from opportunityos.infrastructure.database.store import ProfileNotFoundError
+
+            raise ProfileNotFoundError(str(user_id))
+        return self._evaluation_candidates(user_id)
+
+    def create_evaluation_dataset(
+        self,
+        user_id: UUID,
+        name: str,
+        extraction_labels: list[EvaluationExtractionLabel] | None = None,
+    ) -> EvaluationDataset:
+        profile_record = self._session.scalar(
+            select(PersonalProfileRecord).where(PersonalProfileRecord.user_id == str(user_id))
+        )
+        if profile_record is None:
+            from opportunityos.infrastructure.database.store import ProfileNotFoundError
+
+            raise ProfileNotFoundError(str(user_id))
+        profile = PersonalProfile.model_validate(profile_record.profile_json)
+        label_by_analysis = {
+            label.source_analysis_id: label for label in (extraction_labels or []) if label.confirmed
+        }
+
+        cases: list[EvaluationCase] = []
+        for candidate in self._evaluation_candidates(user_id):
+            label = label_by_analysis.get(candidate.source_analysis_id)
             cases.append(
                 EvaluationCase(
-                    case_id=f"analysis-{run.id}",
-                    name=(
-                        f"{stored_result.opportunity.company_name} — "
-                        f"{stored_result.opportunity.title}"
+                    case_id=f"analysis-{candidate.source_analysis_id}",
+                    name=candidate.name,
+                    opportunity=candidate.opportunity,
+                    expected_decision=candidate.expected_decision,
+                    extraction_label_confirmed=label is not None,
+                    expected_company_name=label.expected_company_name if label else None,
+                    expected_title=label.expected_title if label else None,
+                    expected_opportunity_type=label.expected_opportunity_type if label else None,
+                    expected_remote_allowed=label.expected_remote_allowed if label else None,
+                    expected_location=label.expected_location if label else None,
+                    expected_required_skills=label.expected_required_skills if label else [],
+                    expected_problem_areas=label.expected_problem_areas if label else [],
+                    expected_responsibilities=label.expected_responsibilities if label else [],
+                    source_analysis_id=candidate.source_analysis_id,
+                    label_action=candidate.label_action,
+                    label_reasons=candidate.label_reasons,
+                    notes=(
+                        "Frozen with a user-confirmed extraction label."
+                        if label is not None
+                        else "Frozen from the latest explicit feedback without an extraction label."
                     ),
-                    opportunity=source,
-                    expected_decision=expected,
-                    source_analysis_id=UUID(run.id),
-                    label_action=action,
-                    label_reasons=_feedback_reasons(event.event_json),
-                    notes="Frozen from the latest explicit feedback for this analysis.",
                 )
             )
 
