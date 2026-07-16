@@ -4,6 +4,7 @@ const state = {
   analysis: null,
   memory: [],
   audit: [],
+  evaluationCandidates: [],
   evaluationDatasets: [],
   evaluationReport: null,
 };
@@ -22,8 +23,8 @@ const viewCopy = {
     "Inspect the fit dimensions, evidence, hypotheses, guardrails and safe next action before pursuing anything.",
   ],
   "evaluation-view": [
-    "Measure relevance quality repeatedly",
-    "Freeze your explicit decisions into a stable benchmark and compare the same opportunities across mock, OpenAI and Claude runs.",
+    "Measure extraction and decision quality",
+    "Confirm what new opportunities actually say, freeze those labels, and compare extraction and decisions separately across mock, OpenAI and Claude runs.",
   ],
   "memory-view": [
     "Control what the system learns",
@@ -186,12 +187,14 @@ function clearProfile() {
   state.analysis = null;
   state.memory = [];
   state.audit = [];
+  state.evaluationCandidates = [];
   state.evaluationDatasets = [];
   state.evaluationReport = null;
   localStorage.removeItem("opportunityos.userId");
   $("#active-user-label").textContent = "No active profile";
   $("#change-profile-button").classList.add("is-hidden");
   $("#profile-summary").classList.add("is-hidden");
+  $("#evaluation-candidates").innerHTML = "";
   $("#evaluation-datasets").innerHTML = "";
   $("#evaluation-report").classList.add("is-hidden");
   activateView("profile-view");
@@ -218,7 +221,6 @@ function renderProfile(profile) {
     <div class="feedback-actions">
       <button class="button button-primary" data-go="analyse-view" type="button">Analyse an opportunity</button>
       <button class="button button-secondary" data-go="evaluation-view" type="button">Benchmark quality</button>
-      <button class="button button-secondary" data-go="memory-view" type="button">Review learned memory</button>
     </div>`;
   summary.classList.remove("is-hidden");
   bindGoButtons(summary);
@@ -226,7 +228,7 @@ function renderProfile(profile) {
 
 async function loadProfile(userId, silent = false) {
   try {
-    const response = await api(`/v1/profiles/${encodeURIComponent(userId)}`);
+    const response = await api(`/v1/profiles/${String(userId).trim()}`);
     setActiveProfile(response.profile);
     if (!silent) showNotice("Profile loaded.");
     return true;
@@ -234,9 +236,4 @@ async function loadProfile(userId, silent = false) {
     if (!silent) showNotice(error.message, "error");
     return false;
   }
-}
-
-function renderList(items, renderer, emptyMessage) {
-  if (!items?.length) return `<p class="memory-value">${escapeHtml(emptyMessage)}</p>`;
-  return items.map(renderer).join("");
 }
