@@ -422,7 +422,7 @@ class EvaluationStoreMixin:
         self,
         user_id: UUID,
         *,
-        include_history: bool = False,
+        include_history: bool = True,
     ) -> list[EvaluationDatasetSummary]:
         records = sorted(
             self._active_dataset_records(user_id),
