@@ -11,39 +11,16 @@ function decisionLabelHtml(labels) {
 function renderEvaluationDatasets() {
   const target = $("#evaluation-datasets");
   if (!state.evaluationDatasets.length) {
-    target.innerHTML = `
-      <article class="card evaluation-empty">
-        <p class="section-kicker">No frozen dataset</p>
-        <h2>Label real opportunities first</h2>
-        <p class="memory-value">Analyse opportunities and record Worth pursuing, Save signal, or Not relevant. Then return here to freeze those decisions into a benchmark.</p>
-      </article>`;
+    target.innerHTML = `<article class="card evaluation-empty"><p class="section-kicker">No frozen dataset</p><h2>Label real opportunities first</h2><p class="memory-value">Analyse opportunities and record Worth pursuing, Save signal, or Not relevant.</p></article>`;
     return;
   }
-
   target.innerHTML = state.evaluationDatasets.map((dataset) => `
     <article class="card evaluation-dataset-card">
-      <div class="card-heading">
-        <div>
-          <p class="section-kicker">Frozen dataset</p>
-          <h2>${escapeHtml(dataset.name)}</h2>
-          <p class="memory-value">Created ${escapeHtml(formatDate(dataset.created_at))} · ${dataset.case_count} cases</p>
-        </div>
-        <span class="${dataset.ready_for_comparison ? "privacy-badge" : "selective-badge"}">
-          ${dataset.ready_for_comparison ? "Comparison ready" : "Directional sample"}
-        </span>
-      </div>
+      <div class="card-heading"><div><p class="section-kicker">Frozen dataset</p><h2>${escapeHtml(dataset.name)}</h2><p class="memory-value">Created ${escapeHtml(formatDate(dataset.created_at))} · ${dataset.case_count} cases · ${dataset.extraction_label_count || 0} extraction-labelled</p></div><span class="${dataset.ready_for_comparison ? "privacy-badge" : "selective-badge"}">${dataset.ready_for_comparison ? "Comparison ready" : "Directional sample"}</span></div>
       <div class="decision-row evaluation-labels">${decisionLabelHtml(dataset.decision_labels)}</div>
-      <p class="memory-value">${dataset.ready_for_comparison
-        ? "This snapshot meets the minimum size and label-balance rule."
-        : "Add more explicit decisions, then create a new frozen version for reliable model comparison."}</p>
-      <div class="feedback-actions">
-        <button class="button button-primary evaluation-run-button" data-dataset-id="${escapeHtml(dataset.dataset_id)}" type="button">Run current mode</button>
-      </div>
+      <div class="feedback-actions"><button class="button button-primary evaluation-run-button" data-dataset-id="${escapeHtml(dataset.dataset_id)}" type="button">Run current mode</button></div>
     </article>`).join("");
-
-  $$(".evaluation-run-button", target).forEach((button) => {
-    button.addEventListener("click", () => runEvaluation(button.dataset.datasetId, button));
-  });
+  $$(".evaluation-run-button", target).forEach((button) => button.addEventListener("click", () => runEvaluation(button.dataset.datasetId, button)));
 }
 
 async function loadEvaluationDatasets() {
@@ -59,116 +36,103 @@ async function loadEvaluationDatasets() {
   }
 }
 
+function splitLabels(value) {
+  return String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function candidateEditorHtml(candidate) {
+  const item = candidate.current_extraction || {};
+  const remote = item.remote_allowed === true ? "true" : item.remote_allowed === false ? "false" : "";
+  return `
+    <article class="card extraction-candidate" data-analysis-id="${escapeHtml(candidate.source_analysis_id)}">
+      <div class="card-heading"><div><p class="section-kicker">Expected ${escapeHtml(candidate.expected_decision)}</p><h3>${escapeHtml(candidate.name)}</h3></div><span class="selective-badge">Review extraction</span></div>
+      <div class="two-column-fields">
+        <label><span>Expected company</span><input data-field="company_name" value="${escapeHtml(item.company_name || "")}"></label>
+        <label><span>Expected title</span><input data-field="title" value="${escapeHtml(item.title || "")}"></label>
+        <label><span>Opportunity type</span><select data-field="opportunity_type">${["", "consulting", "fractional", "contract", "full_time", "advisory", "partnership", "unknown"].map((value) => `<option value="${value}" ${value === (item.opportunity_type || "") ? "selected" : ""}>${value ? humanise(value) : "Not labelled"}</option>`).join("")}</select></label>
+        <label><span>Remote allowed</span><select data-field="remote_allowed"><option value="" ${remote === "" ? "selected" : ""}>Not labelled</option><option value="true" ${remote === "true" ? "selected" : ""}>Yes</option><option value="false" ${remote === "false" ? "selected" : ""}>No</option></select></label>
+      </div>
+      <label><span>Required skills <small>comma-separated</small></span><input data-field="required_skills" value="${escapeHtml((item.required_skills || []).join(", "))}"></label>
+      <label><span>Problem areas <small>comma-separated</small></span><input data-field="problem_areas" value="${escapeHtml((item.problem_areas || []).join(", "))}"></label>
+    </article>`;
+}
+
+async function loadEvaluationCandidates(button) {
+  setBusy(button, true, "Loading cases…");
+  try {
+    const response = await api(`/v1/users/${state.userId}/evaluation-candidates`);
+    state.evaluationCandidates = response.candidates || [];
+    let target = $("#evaluation-candidate-editor");
+    if (!target) {
+      target = document.createElement("div");
+      target.id = "evaluation-candidate-editor";
+      target.className = "evaluation-layout";
+      $("#evaluation-dataset-form").after(target);
+    }
+    target.innerHTML = state.evaluationCandidates.length
+      ? `<div class="issue-card info"><p>Review these expected fields before freezing. Correct anything the system extracted incorrectly.</p></div>${state.evaluationCandidates.map(candidateEditorHtml).join("")}`
+      : `<div class="blocked-outreach"><strong>No decided opportunities</strong><p>Record explicit decisions first.</p></div>`;
+    showNotice(`${state.evaluationCandidates.length} cases loaded for extraction review.`);
+  } catch (error) {
+    showNotice(error.message, "error");
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+function collectExtractionLabels() {
+  return $$(".extraction-candidate").map((card) => {
+    const value = (field) => $(`[data-field='${field}']`, card)?.value || "";
+    const remote = value("remote_allowed");
+    return {
+      source_analysis_id: card.dataset.analysisId,
+      expected: {
+        company_name: value("company_name").trim() || null,
+        title: value("title").trim() || null,
+        opportunity_type: value("opportunity_type") || null,
+        remote_allowed: remote === "" ? null : remote === "true",
+        required_skills: splitLabels(value("required_skills")),
+        problem_areas: splitLabels(value("problem_areas")),
+      },
+    };
+  });
+}
+
 function signedScore(value) {
   const numeric = Number(value || 0);
   return `${numeric >= 0 ? "+" : ""}${numeric}`;
 }
 
-function decisionGateHtml(item) {
-  const gates = item.decision_gates || [];
-  if (!gates.length) return `<p>Decision gates: none</p>`;
-  const scoreDecision = item.score_based_decision || item.predicted_decision || "unknown";
-  return `
-    <div class="issue-card warning">
-      <p><strong>Decision gate applied</strong></p>
-      <p>Score policy said ${escapeHtml(scoreDecision)}; final decision became ${escapeHtml(item.predicted_decision)}.</p>
-      <p>${gates.map((code) => escapeHtml(humanise(code))).join(", ")}</p>
-    </div>`;
+function extractionChecksHtml(item) {
+  const checks = Object.entries(item.extraction_field_results || {});
+  if (!checks.length) return `<p>Extraction was not labelled for this frozen case.</p>`;
+  return `<div class="diagnostic-grid">${checks.map(([field, passed]) => `<div class="diagnostic-row"><span>${escapeHtml(humanise(field))}</span><strong>${passed ? "match" : "mismatch"}</strong></div>`).join("")}</div>`;
 }
 
 function fitDiagnosticsHtml(item) {
-  const contributions = Object.entries(item.fit_contributions || {})
-    .sort((left, right) => right[1] - left[1])
-    .map(([name, contribution]) => `
-      <div class="diagnostic-row">
-        <span>${escapeHtml(humanise(name))}</span>
-        <strong>${Number(contribution).toFixed(1)} points</strong>
-      </div>`)
-    .join("");
-  const issueCodes = (item.critic_issue_codes || []).length
-    ? `<p>Critic issues: ${item.critic_issue_codes.map((code) => escapeHtml(humanise(code))).join(", ")}</p>`
-    : `<p>Critic issues: none</p>`;
-  return `
-    <details class="evaluation-diagnostics">
-      <summary>Why this score and decision?</summary>
-      <div class="diagnostic-grid">
-        <div class="diagnostic-row"><span>Extraction confidence</span><strong>${percentage(item.extraction_confidence)}</strong></div>
-        <div class="diagnostic-row"><span>Margin above HOLD threshold</span><strong>${signedScore(item.distance_to_hold_threshold)}</strong></div>
-        <div class="diagnostic-row"><span>Margin above PURSUE threshold</span><strong>${signedScore(item.distance_to_pursue_threshold)}</strong></div>
-        ${contributions}
-      </div>
-      ${decisionGateHtml(item)}
-      ${issueCodes}
-    </details>`;
+  const contributions = Object.entries(item.fit_contributions || {}).sort((a, b) => b[1] - a[1]).map(([name, contribution]) => `<div class="diagnostic-row"><span>${escapeHtml(humanise(name))}</span><strong>${Number(contribution).toFixed(1)} points</strong></div>`).join("");
+  const gates = item.decision_gates || [];
+  return `<details class="evaluation-diagnostics"><summary>Why this score and decision?</summary><div class="diagnostic-grid"><div class="diagnostic-row"><span>Extraction confidence</span><strong>${percentage(item.extraction_confidence)}</strong></div><div class="diagnostic-row"><span>Margin above HOLD threshold</span><strong>${signedScore(item.distance_to_hold_threshold)}</strong></div><div class="diagnostic-row"><span>Margin above PURSUE threshold</span><strong>${signedScore(item.distance_to_pursue_threshold)}</strong></div>${contributions}</div>${gates.length ? `<div class="issue-card warning"><p><strong>Decision gate:</strong> ${gates.map((code) => escapeHtml(humanise(code))).join(", ")}</p></div>` : `<p>Decision gates: none</p>`}<h4>Extraction checks</h4>${extractionChecksHtml(item)}</details>`;
 }
 
 function caseResultHtml(item) {
-  if (item.error_type) {
-    return `
-      <div class="evaluation-case is-error">
-        <div><strong>${escapeHtml(item.name)}</strong><p>${escapeHtml(item.error_type)}: ${escapeHtml(item.error_message)}</p></div>
-        <span class="decision-badge decision-reject">failed</span>
-      </div>`;
-  }
+  if (item.error_type) return `<div class="evaluation-case is-error"><strong>${escapeHtml(item.name)}</strong><p>${escapeHtml(item.error_type)}: ${escapeHtml(item.error_message)}</p></div>`;
   const predicted = item.predicted_decision || "unknown";
   const company = item.extracted_company_name || item.analysis?.opportunity?.company_name || "Unknown company";
   const title = item.extracted_title || item.analysis?.opportunity?.title || item.name;
   const opportunityType = item.extracted_opportunity_type || item.analysis?.opportunity?.opportunity_type;
-  const currentIdentity = `${company} — ${title}`;
-  const frozenLabel = currentIdentity !== item.name
-    ? `<p class="memory-value">Frozen case label: ${escapeHtml(item.name)}</p>`
-    : "";
-  return `
-    <div class="evaluation-case ${item.correct ? "is-correct" : "is-mismatch"}">
-      <div>
-        <strong>${escapeHtml(currentIdentity)}</strong>
-        ${frozenLabel}
-        <p>Expected ${escapeHtml(item.expected_decision)} · predicted ${escapeHtml(predicted)} · fit ${item.fit_score}${opportunityType ? ` · ${escapeHtml(humanise(opportunityType))}` : ""}</p>
-        <p>${item.evidence_count} evidence claims · ${item.hypothesis_count} hypotheses · critic ${item.critic_passed ? "passed" : "flagged"}</p>
-        ${fitDiagnosticsHtml(item)}
-      </div>
-      <span class="decision-badge decision-${escapeHtml(predicted)}">${item.correct ? "match" : "mismatch"}</span>
-    </div>`;
+  return `<div class="evaluation-case ${item.correct ? "is-correct" : "is-mismatch"}"><div><strong>${escapeHtml(`${company} — ${title}`)}</strong><p>Expected ${escapeHtml(item.expected_decision)} · predicted ${escapeHtml(predicted)} · fit ${item.fit_score}${opportunityType ? ` · ${escapeHtml(humanise(opportunityType))}` : ""}</p><p>${item.extraction_checks_passed}/${item.extraction_checks} extraction checks passed · critic ${item.critic_passed ? "passed" : "flagged"}</p>${fitDiagnosticsHtml(item)}</div><span class="decision-badge decision-${escapeHtml(predicted)}">${item.correct ? "match" : "mismatch"}</span></div>`;
 }
 
 function predictionPatternHtml(metrics) {
-  return `
-    <article class="card evaluation-diagnostic-card">
-      <p class="section-kicker">Decision pattern</p>
-      <h2>Is the system too aggressive or too conservative?</h2>
-      <div class="evaluation-metrics compact-metrics">
-        <div class="stat-box"><strong>${metrics.prediction_labels?.pursue || 0}</strong><span>predicted pursue</span></div>
-        <div class="stat-box"><strong>${metrics.prediction_labels?.hold || 0}</strong><span>predicted hold</span></div>
-        <div class="stat-box"><strong>${metrics.prediction_labels?.reject || 0}</strong><span>predicted reject</span></div>
-        <div class="stat-box"><strong>${percentage(metrics.underprediction_rate)}</strong><span>underprediction</span></div>
-        <div class="stat-box"><strong>${percentage(metrics.overprediction_rate)}</strong><span>overprediction</span></div>
-        <div class="stat-box"><strong>${metrics.gated_case_count || 0}</strong><span>gated cases</span></div>
-      </div>
-      <p class="memory-value">Underprediction means the system chose a more conservative action than your frozen label. Overprediction means it chose a more aggressive action. Gates can cap a high score when identity or work-style evidence is unsafe.</p>
-    </article>`;
+  return `<article class="card evaluation-diagnostic-card"><p class="section-kicker">Decision pattern</p><h2>Is the system too aggressive or too conservative?</h2><div class="evaluation-metrics compact-metrics"><div class="stat-box"><strong>${metrics.prediction_labels?.pursue || 0}</strong><span>predicted pursue</span></div><div class="stat-box"><strong>${metrics.prediction_labels?.hold || 0}</strong><span>predicted hold</span></div><div class="stat-box"><strong>${metrics.prediction_labels?.reject || 0}</strong><span>predicted reject</span></div><div class="stat-box"><strong>${percentage(metrics.underprediction_rate)}</strong><span>underprediction</span></div><div class="stat-box"><strong>${percentage(metrics.overprediction_rate)}</strong><span>overprediction</span></div><div class="stat-box"><strong>${metrics.gated_case_count || 0}</strong><span>gated cases</span></div></div></article>`;
 }
 
 function thresholdSimulationHtml(report) {
   const policy = report.decision_policy || { hold_threshold: 45, pursue_threshold: 72 };
   const simulation = report.threshold_simulation;
-  if (!simulation) {
-    return `
-      <article class="card evaluation-diagnostic-card">
-        <p class="section-kicker">Threshold calibration</p>
-        <h2>No better safe threshold candidate yet</h2>
-        <p class="memory-value">Current policy: HOLD at ${policy.hold_threshold}, PURSUE at ${policy.pursue_threshold}. Add more balanced cases before interpreting score thresholds.</p>
-      </article>`;
-  }
-  return `
-    <article class="card evaluation-diagnostic-card">
-      <p class="section-kicker">Exploratory threshold simulation</p>
-      <h2>A candidate policy fits this frozen sample better</h2>
-      <div class="threshold-comparison">
-        <div><span>Current</span><strong>HOLD ${policy.hold_threshold} · PURSUE ${policy.pursue_threshold}</strong><small>${percentage(report.metrics.decision_accuracy)} accuracy</small></div>
-        <div><span>Simulated</span><strong>HOLD ${simulation.hold_threshold} · PURSUE ${simulation.pursue_threshold}</strong><small>${percentage(simulation.decision_accuracy)} accuracy · ${percentage(simulation.false_pursue_rate)} false pursue</small></div>
-      </div>
-      <div class="issue-card warning"><p>${escapeHtml(simulation.sample_warning)} The simulated values are not applied to production decisions.</p></div>
-    </article>`;
+  if (!simulation) return `<article class="card evaluation-diagnostic-card"><p class="section-kicker">Threshold calibration</p><h2>No better safe threshold candidate yet</h2><p class="memory-value">Current policy: HOLD at ${policy.hold_threshold}, PURSUE at ${policy.pursue_threshold}.</p></article>`;
+  return `<article class="card evaluation-diagnostic-card"><p class="section-kicker">Exploratory threshold simulation</p><h2>A candidate policy fits this frozen sample better</h2><div class="threshold-comparison"><div><span>Current</span><strong>HOLD ${policy.hold_threshold} · PURSUE ${policy.pursue_threshold}</strong></div><div><span>Simulated</span><strong>HOLD ${simulation.hold_threshold} · PURSUE ${simulation.pursue_threshold}</strong><small>${percentage(simulation.decision_accuracy)} accuracy</small></div></div></article>`;
 }
 
 function downloadEvaluationReport() {
@@ -188,33 +152,8 @@ function renderEvaluationReport(report) {
   state.evaluationReport = report;
   const target = $("#evaluation-report");
   const metrics = report.metrics;
-  target.innerHTML = `
-    <article class="card evaluation-report-hero">
-      <div class="card-heading">
-        <div>
-          <p class="section-kicker">Latest benchmark run</p>
-          <h2>${escapeHtml(report.dataset_name)}</h2>
-          <p class="memory-value">Mode ${escapeHtml(report.mode)} · providers ${escapeHtml(report.provider_order)} · completed ${escapeHtml(formatDate(report.completed_at))}</p>
-        </div>
-        <button id="download-evaluation-report" class="button button-secondary" type="button">Download JSON</button>
-      </div>
-      <div class="evaluation-metrics">
-        <div class="stat-box"><strong>${percentage(metrics.decision_accuracy)}</strong><span>decision accuracy</span></div>
-        <div class="stat-box"><strong>${percentage(metrics.false_pursue_rate)}</strong><span>false pursue rate</span></div>
-        <div class="stat-box"><strong>${percentage(metrics.critic_pass_rate)}</strong><span>critic pass rate</span></div>
-        <div class="stat-box"><strong>${metrics.completed_count}/${metrics.case_count}</strong><span>completed cases</span></div>
-        <div class="stat-box"><strong>${metrics.total_model_calls}</strong><span>model calls</span></div>
-        <div class="stat-box"><strong>${metrics.total_reported_input_tokens + metrics.total_reported_output_tokens}</strong><span>reported tokens</span></div>
-      </div>
-      ${metrics.case_count < 5 ? `<div class="issue-card warning"><p>This run is directional because the frozen dataset contains fewer than five cases.</p></div>` : ""}
-    </article>
-    ${predictionPatternHtml(metrics)}
-    ${thresholdSimulationHtml(report)}
-    <article class="card">
-      <p class="section-kicker">Case-by-case comparison</p>
-      <h2>Where predictions matched or differed from your decisions</h2>
-      <div class="evaluation-cases">${report.cases.map(caseResultHtml).join("")}</div>
-    </article>`;
+  const extractionValue = metrics.extraction_accuracy == null ? "Not labelled" : percentage(metrics.extraction_accuracy);
+  target.innerHTML = `<article class="card evaluation-report-hero"><div class="card-heading"><div><p class="section-kicker">Latest benchmark run</p><h2>${escapeHtml(report.dataset_name)}</h2><p class="memory-value">Mode ${escapeHtml(report.mode)} · completed ${escapeHtml(formatDate(report.completed_at))}</p></div><button id="download-evaluation-report" class="button button-secondary" type="button">Download JSON</button></div><div class="evaluation-metrics"><div class="stat-box"><strong>${percentage(metrics.decision_accuracy)}</strong><span>decision accuracy</span></div><div class="stat-box"><strong>${extractionValue}</strong><span>extraction accuracy</span></div><div class="stat-box"><strong>${percentage(metrics.false_pursue_rate)}</strong><span>false pursue</span></div><div class="stat-box"><strong>${percentage(metrics.critic_pass_rate)}</strong><span>critic pass</span></div><div class="stat-box"><strong>${metrics.extraction_labelled_case_count}/${metrics.case_count}</strong><span>extraction-labelled</span></div><div class="stat-box"><strong>${metrics.total_model_calls}</strong><span>model calls</span></div></div></article>${predictionPatternHtml(metrics)}${thresholdSimulationHtml(report)}<article class="card"><p class="section-kicker">Case-by-case comparison</p><h2>Decision and extraction results</h2><div class="evaluation-cases">${report.cases.map(caseResultHtml).join("")}</div></article>`;
   target.classList.remove("is-hidden");
   $("#download-evaluation-report").addEventListener("click", downloadEvaluationReport);
   target.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -223,9 +162,7 @@ function renderEvaluationReport(report) {
 async function runEvaluation(datasetId, button) {
   setBusy(button, true, "Running benchmark…");
   try {
-    const report = await api(`/v1/users/${state.userId}/evaluation-datasets/${datasetId}/runs`, {
-      method: "POST",
-    });
+    const report = await api(`/v1/users/${state.userId}/evaluation-datasets/${datasetId}/runs`, { method: "POST" });
     renderEvaluationReport(report);
     showNotice(`Evaluation completed: ${percentage(report.metrics.decision_accuracy)} decision accuracy.`);
   } catch (error) {
@@ -237,19 +174,26 @@ async function runEvaluation(datasetId, button) {
 
 function bindEvaluationEvents() {
   $("#refresh-evaluations-button").addEventListener("click", loadEvaluationDatasets);
-  $("#evaluation-dataset-form").addEventListener("submit", async (event) => {
+  const form = $("#evaluation-dataset-form");
+  const reviewButton = document.createElement("button");
+  reviewButton.className = "button button-secondary";
+  reviewButton.type = "button";
+  reviewButton.textContent = "Review extraction labels";
+  form.insertBefore(reviewButton, $("button[type='submit']", form));
+  reviewButton.addEventListener("click", () => loadEvaluationCandidates(reviewButton));
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!requireProfile()) return;
-    const button = $("button[type='submit']", event.currentTarget);
-    const name = String(new FormData(event.currentTarget).get("name") || "").trim();
+    const button = $("button[type='submit']", form);
+    const name = String(new FormData(form).get("name") || "").trim();
     setBusy(button, true, "Freezing dataset…");
     try {
       const dataset = await api(`/v1/users/${state.userId}/evaluation-datasets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, extraction_labels: collectExtractionLabels() }),
       });
-      showNotice(`Frozen dataset created with ${dataset.cases.length} explicitly labelled cases.`);
+      showNotice(`Frozen ${dataset.cases.length} decisions with ${collectExtractionLabels().length} reviewed extraction labels.`);
       await loadEvaluationDatasets();
     } catch (error) {
       showNotice(error.message, "error");
