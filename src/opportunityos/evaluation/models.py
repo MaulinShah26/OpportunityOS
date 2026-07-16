@@ -9,15 +9,55 @@ from opportunityos.domain.enums import Decision, FeedbackAction, FeedbackReason,
 from opportunityos.domain.models import AnalysisResult, OpportunityInput, PersonalProfile, utcnow
 
 
+class EvaluationExtractionLabel(BaseModel):
+    source_analysis_id: UUID
+    confirmed: bool = True
+    expected_company_name: str | None = Field(default=None, max_length=240)
+    expected_title: str | None = Field(default=None, max_length=300)
+    expected_opportunity_type: OpportunityType | None = None
+    expected_remote_allowed: bool | None = None
+    expected_location: str | None = Field(default=None, max_length=300)
+    expected_required_skills: list[str] = Field(default_factory=list)
+    expected_problem_areas: list[str] = Field(default_factory=list)
+    expected_responsibilities: list[str] = Field(default_factory=list)
+
+
+class EvaluationCandidate(BaseModel):
+    source_analysis_id: UUID
+    name: str
+    expected_decision: Decision
+    label_action: FeedbackAction | None = None
+    label_reasons: list[FeedbackReason] = Field(default_factory=list)
+    opportunity: OpportunityInput
+    extracted_company_name: str
+    extracted_title: str
+    extracted_opportunity_type: OpportunityType
+    extracted_remote_allowed: bool | None = None
+    extracted_location: str | None = None
+    extracted_required_skills: list[str] = Field(default_factory=list)
+    extracted_problem_areas: list[str] = Field(default_factory=list)
+    extracted_responsibilities: list[str] = Field(default_factory=list)
+
+
+class EvaluationCandidateCollection(BaseModel):
+    user_id: UUID
+    candidates: list[EvaluationCandidate]
+
+
 class EvaluationCase(BaseModel):
     case_id: str = Field(min_length=2, max_length=120)
     name: str = Field(min_length=2, max_length=240)
     opportunity: OpportunityInput
     expected_decision: Decision
+    extraction_label_confirmed: bool = False
+    expected_company_name: str | None = None
+    expected_title: str | None = None
     expected_opportunity_type: OpportunityType | None = None
     expected_remote_allowed: bool | None = None
+    expected_location: str | None = None
     expected_required_skills: list[str] = Field(default_factory=list)
     expected_problem_areas: list[str] = Field(default_factory=list)
+    expected_responsibilities: list[str] = Field(default_factory=list)
     expected_hard_constraint_breach: bool | None = None
     source_analysis_id: UUID | None = None
     label_action: FeedbackAction | None = None
@@ -28,7 +68,7 @@ class EvaluationCase(BaseModel):
 class EvaluationDataset(BaseModel):
     dataset_id: UUID = Field(default_factory=uuid4)
     name: str = Field(min_length=2, max_length=200)
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
     created_at: datetime = Field(default_factory=utcnow)
     profile: PersonalProfile
     cases: list[EvaluationCase] = Field(min_length=1)
@@ -43,6 +83,8 @@ class EvaluationDatasetSummary(BaseModel):
     case_count: int = Field(ge=0)
     decision_labels: dict[str, int] = Field(default_factory=dict)
     ready_for_comparison: bool
+    extraction_labelled_case_count: int = Field(default=0, ge=0)
+    extraction_ready: bool = False
     created_at: datetime
 
 
@@ -53,6 +95,7 @@ class EvaluationDatasetCollection(BaseModel):
 
 class CreateEvaluationDatasetRequest(BaseModel):
     name: str = Field(min_length=2, max_length=200)
+    extraction_labels: list[EvaluationExtractionLabel] = Field(default_factory=list)
 
 
 class DecisionPolicySnapshot(BaseModel):
@@ -86,6 +129,9 @@ class EvaluationCaseResult(BaseModel):
     decision_distance: int | None = None
     fit_score: int | None = None
     extraction_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    extraction_label_confirmed: bool = False
+    extraction_correct: bool | None = None
+    extraction_field_results: dict[str, bool] = Field(default_factory=dict)
     fit_dimensions: dict[str, float] = Field(default_factory=dict)
     fit_contributions: dict[str, float] = Field(default_factory=dict)
     distance_to_hold_threshold: int | None = None
@@ -119,6 +165,10 @@ class EvaluationMetrics(BaseModel):
     evidence_present_rate: float = Field(ge=0.0, le=1.0)
     critic_pass_rate: float = Field(ge=0.0, le=1.0)
     extraction_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
+    extraction_case_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
+    extraction_labelled_case_count: int = Field(default=0, ge=0)
+    extraction_field_count: int = Field(default=0, ge=0)
+    extraction_field_accuracy: dict[str, float] = Field(default_factory=dict)
     hard_constraint_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
     prediction_labels: dict[str, int] = Field(default_factory=dict)
     confusion_matrix: dict[str, dict[str, int]] = Field(default_factory=dict)
