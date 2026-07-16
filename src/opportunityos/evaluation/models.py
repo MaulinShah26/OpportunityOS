@@ -72,7 +72,7 @@ class EvaluationCase(BaseModel):
 class EvaluationDataset(BaseModel):
     dataset_id: UUID = Field(default_factory=uuid4)
     name: str = Field(min_length=2, max_length=200)
-    schema_version: str = "1.4"
+    schema_version: str = "1.3"
     revision: int = Field(default=1, ge=1)
     parent_dataset_ids: list[UUID] = Field(default_factory=list)
     revision_reason: str | None = Field(default=None, max_length=1000)
