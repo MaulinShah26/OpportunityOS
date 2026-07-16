@@ -63,6 +63,24 @@ function modelRunHtml(result) {
     </div>`;
 }
 
+function resetAnalysisWorkspace({ activate = true, focus = true } = {}) {
+  const form = $("#analysis-form");
+  form?.reset();
+  state.analysis = null;
+
+  const result = $("#analysis-result");
+  result.innerHTML = "";
+  result.classList.add("is-hidden");
+  $("#analysis-empty").classList.remove("is-hidden");
+
+  if (activate) activateView("analyse-view");
+  if (focus) {
+    window.requestAnimationFrame(() => {
+      $("input[name='company_hint']", form)?.focus();
+    });
+  }
+}
+
 function renderAnalysis(result) {
   state.analysis = result;
   $("#analysis-empty").classList.add("is-hidden");
@@ -146,7 +164,12 @@ function openFeedbackDialog(action) {
     const actions = String(label.dataset.feedbackActions || "").split(" ");
     label.classList.toggle("is-hidden", !actions.includes(action));
   });
+  dialog.scrollTop = 0;
   dialog.showModal();
+  window.requestAnimationFrame(() => {
+    $("input[name='reasons']:checked", dialog)?.focus()
+      || $(".feedback-reason-option:not(.is-hidden) input", dialog)?.focus();
+  });
 }
 
 async function submitFeedback(action, reasons, button) {
@@ -167,7 +190,13 @@ async function submitFeedback(action, reasons, button) {
     });
     $("#feedback-dialog").close();
     await loadProfile(state.userId, true);
-    showNotice("Decision and reasons saved; the personal model was updated transparently.");
+    resetAnalysisWorkspace();
+    const labels = {
+      pursue: "Worth-pursuing decision",
+      save: "Saved signal",
+      reject: "Not-relevant decision",
+    };
+    showNotice(`${labels[action] || "Decision"} recorded. Ready for the next opportunity.`);
   } catch (error) {
     showNotice(error.message, "error");
   } finally {

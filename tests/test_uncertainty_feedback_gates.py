@@ -125,9 +125,23 @@ def test_negative_reasons_learn_specific_aversions_without_broad_engagement_pena
 
 
 def test_web_shell_contains_reason_aware_feedback_controls() -> None:
-    response = TestClient(app).get("/app/")
+    client = TestClient(app)
+    response = client.get("/app/")
+    analysis_script = client.get("/static/analysis.js")
+    component_styles = client.get("/static/components.css")
 
     assert response.status_code == 200
     assert 'id="feedback-dialog"' in response.text
+    assert 'class="feedback-reason-option"' in response.text
     assert 'value="missing_information"' in response.text
     assert 'value="low_ownership"' in response.text
+
+    assert analysis_script.status_code == 200
+    assert "function resetAnalysisWorkspace" in analysis_script.text
+    assert 'form?.reset();' in analysis_script.text
+    assert 'activateView("analyse-view")' in analysis_script.text
+    assert "Ready for the next opportunity" in analysis_script.text
+
+    assert component_styles.status_code == 200
+    assert '.feedback-reason-option input[type="checkbox"]' in component_styles.text
+    assert "width: 18px;" in component_styles.text
