@@ -30,8 +30,12 @@ _DECISION_POSITION = {
 _DECISIONS = tuple(_DECISION_POSITION)
 
 
-def _normalise(value: str) -> str:
-    return " ".join(value.casefold().split())
+def _normalise(value: str | None) -> str:
+    return " ".join((value or "").casefold().split())
+
+
+def _normalised_set(values: list[str]) -> set[str]:
+    return {_normalise(item) for item in values if _normalise(item)}
 
 
 def _metadata_int(metadata: dict[str, str], key: str) -> int:
@@ -52,28 +56,32 @@ def _metadata_gate_codes(metadata: dict[str, str]) -> list[str]:
     return [item.strip() for item in metadata.get("decision_gates", "").split(",") if item.strip()]
 
 
-def _extraction_checks(case: EvaluationCase, result: AnalysisResult) -> tuple[int, int]:
+def _extraction_field_results(case: EvaluationCase, result: AnalysisResult) -> dict[str, bool]:
     opportunity = result.opportunity
-    total = 0
-    passed = 0
+    results: dict[str, bool] = {}
+    confirmed = case.extraction_label_confirmed
 
-    if case.expected_opportunity_type is not None:
-        total += 1
-        passed += opportunity.opportunity_type == case.expected_opportunity_type
-    if case.expected_remote_allowed is not None:
-        total += 1
-        passed += opportunity.remote_allowed is case.expected_remote_allowed
+    def check_string(name: str, expected: str | None, actual: str | None) -> None:
+        if confirmed or expected is not None:
+            results[name] = _normalise(expected) == _normalise(actual)
 
-    actual_skills = {_normalise(item) for item in opportunity.required_skills}
-    for expected in case.expected_required_skills:
-        total += 1
-        passed += _normalise(expected) in actual_skills
+    check_string("company_name", case.expected_company_name, opportunity.company_name)
+    check_string("title", case.expected_title, opportunity.title)
+    if confirmed or case.expected_opportunity_type is not None:
+        results["opportunity_type"] = opportunity.opportunity_type == case.expected_opportunity_type
+    if confirmed or case.expected_remote_allowed is not None:
+        results["remote_allowed"] = opportunity.remote_allowed is case.expected_remote_allowed
+    check_string("location", case.expected_location, opportunity.location)
 
-    actual_problem_areas = {_normalise(item) for item in opportunity.problem_areas}
-    for expected in case.expected_problem_areas:
-        total += 1
-        passed += _normalise(expected) in actual_problem_areas
-    return total, passed
+    list_fields = (
+        ("required_skills", case.expected_required_skills, opportunity.required_skills),
+        ("problem_areas", case.expected_problem_areas, opportunity.problem_areas),
+        ("responsibilities", case.expected_responsibilities, opportunity.responsibilities),
+    )
+    for name, expected, actual in list_fields:
+        if confirmed or expected:
+            results[name] = _normalised_set(expected) == _normalised_set(actual)
+    return results
 
 
 def _safe_rate(numerator: int | float, denominator: int) -> float:
@@ -207,7 +215,10 @@ def evaluate_dataset(
                 if case.expected_hard_constraint_breach is not None
                 else None
             )
-            extraction_checks, extraction_passed = _extraction_checks(case, analysis)
+            extraction_results = _extraction_field_results(case, analysis)
+            extraction_checks = len(extraction_results)
+            extraction_passed = sum(extraction_results.values())
+            extraction_correct = all(extraction_results.values()) if extraction_results else None
             fit_dimensions = {item.name: item.score for item in analysis.fit_score.dimensions}
             fit_contributions = {
                 item.name: round(item.score * item.weight * 100, 2)
@@ -235,6 +246,9 @@ def evaluate_dataset(
                     ),
                     fit_score=analysis.fit_score.total,
                     extraction_confidence=analysis.opportunity.extraction_confidence,
+                    extraction_label_confirmed=case.extraction_label_confirmed,
+                    extraction_correct=extraction_correct,
+                    extraction_field_results=extraction_results,
                     fit_dimensions=fit_dimensions,
                     fit_contributions=fit_contributions,
                     distance_to_hold_threshold=analysis.fit_score.total - DEFAULT_HOLD_THRESHOLD,
@@ -263,6 +277,7 @@ def evaluate_dataset(
                     case_id=case.case_id,
                     name=case.name,
                     expected_decision=case.expected_decision,
+                    extraction_label_confirmed=case.extraction_label_confirmed,
                     error_type=type(exc).__name__,
                     error_message=str(exc)[:1000],
                 )
@@ -278,6 +293,14 @@ def evaluate_dataset(
 
     extraction_total = sum(item.extraction_checks for item in completed)
     extraction_passed = sum(item.extraction_checks_passed for item in completed)
+    labelled_extraction_cases = [item for item in completed if item.extraction_correct is not None]
+    field_totals: Counter[str] = Counter()
+    field_passed: Counter[str] = Counter()
+    for item in completed:
+        for field_name, passed in item.extraction_field_results.items():
+            field_totals[field_name] += 1
+            field_passed[field_name] += passed
+
     labelled_hard_constraints = [
         item for item in completed if item.hard_constraint_correct is not None
     ]
@@ -340,6 +363,20 @@ def evaluate_dataset(
         extraction_accuracy=(
             _safe_rate(extraction_passed, extraction_total) if extraction_total else None
         ),
+        extraction_case_accuracy=(
+            _safe_rate(
+                sum(bool(item.extraction_correct) for item in labelled_extraction_cases),
+                len(labelled_extraction_cases),
+            )
+            if labelled_extraction_cases
+            else None
+        ),
+        extraction_labelled_case_count=len(labelled_extraction_cases),
+        extraction_field_count=extraction_total,
+        extraction_field_accuracy={
+            field_name: _safe_rate(field_passed[field_name], total)
+            for field_name, total in field_totals.items()
+        },
         hard_constraint_accuracy=(
             _safe_rate(
                 sum(bool(item.hard_constraint_correct) for item in labelled_hard_constraints),
